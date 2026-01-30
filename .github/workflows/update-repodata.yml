@@ -27,23 +27,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Set up Miniconda
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Set up Micromamba
+        uses: mamba-org/setup-micromamba@v2
         with:
-          auto-update-conda: true
-          python-version: '3.11'
-          miniforge-variant: Mambaforge
-          use-mamba: true
-      
-      - name: Create environment
-        shell: bash -el {0}
-        run: |
-          mamba env create -f environment.yml
+          environment-file: environment.yml
+          cache-environment: true
+          init-shell: bash
       
       - name: Generate repodata
-        shell: bash -el {0}
+        shell: micromamba-shell {0}
         run: |
-          conda activate dev-channel
           python generate.py
       
       - name: Get version info
