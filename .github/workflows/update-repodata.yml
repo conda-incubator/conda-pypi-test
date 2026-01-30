@@ -1,0 +1,130 @@
+name: Update Repodata
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'packages.txt'
+      - 'generate.py'
+      - 'environment.yml'
+      - '.github/workflows/update-repodata.yml'
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    name: Generate Repodata
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: '3.11'
+          miniforge-variant: Mambaforge
+          use-mamba: true
+      
+      - name: Create environment
+        shell: bash -el {0}
+        run: |
+          mamba env create -f environment.yml
+      
+      - name: Generate repodata
+        shell: bash -el {0}
+        run: |
+          conda activate dev-channel
+          python generate.py
+      
+      - name: Get version info
+        id: version
+        run: |
+          # Use commit SHA as version identifier
+          echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      
+      - name: Upload repodata.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: repodata.json
+          path: noarch/repodata.json
+          if-no-files-found: error
+      
+      - name: Upload repodata.json.bz2
+        uses: actions/upload-artifact@v4
+        with:
+          name: repodata.json.bz2
+          path: noarch/repodata.json.bz2
+          if-no-files-found: error
+      
+      - name: Upload repodata.json.zst
+        uses: actions/upload-artifact@v4
+        with:
+          name: repodata.json.zst
+          path: noarch/repodata.json.zst
+          if-no-files-found: error
+
+  publish-to-release:
+    name: Publish to GitHub Release
+    needs: generate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Download repodata.json
+        uses: actions/download-artifact@v4
+        with:
+          name: repodata.json
+          path: artifacts
+      
+      - name: Download repodata.json.bz2
+        uses: actions/download-artifact@v4
+        with:
+          name: repodata.json.bz2
+          path: artifacts
+      
+      - name: Download repodata.json.zst
+        uses: actions/download-artifact@v4
+        with:
+          name: repodata.json.zst
+          path: artifacts
+      
+      - name: Get current timestamp
+        id: timestamp
+        run: echo "time=$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+      
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: noarch
+          name: noarch
+          body: |
+            Conda channel repodata for noarch packages.
+            Last updated: ${{ steps.timestamp.outputs.time }}
+            Commit: ${{ github.sha }}
+            
+            ## Files
+            - `repodata.json` - Uncompressed metadata
+            - `repodata.json.bz2` - Bzip2 compressed (recommended)
+            - `repodata.json.zst` - Zstandard compressed (best compression)
+            
+            ## Usage
+            ```bash
+            conda install -c https://github.com/${{ github.repository }}/releases/download/noarch package-name
+            ```
+          files: |
+            artifacts/repodata.json
+            artifacts/repodata.json.bz2
+            artifacts/repodata.json.zst
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
