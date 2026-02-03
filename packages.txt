@@ -42,8 +42,6 @@ ace-tools@0.0
 acryl-sqlglot@25.25.2.dev9
 ada-py@0.7.10
 adafri@2.0.6
-adafruit-ads1x15@1.0.2
-adafruit-pca9685@1.0.1
 adafruit-platformdetect@3.86.0
 adafruit-pureio@1.1.11
 adam-io@2.1608646378.6553204
@@ -239,7 +237,6 @@ airbyte-protocol-models-dataclasses@0.14.5
 airbyte-protocol-models-dataclasses@0.15.0
 airbyte-protocol-models-dataclasses@0.17.1
 airbyte-protocol-models-dataclasses@0.18.0
-aircv@1.4.6
 airflow-multi-dagrun@2.3.1
 airflow-powerbi-plugin@1.0.1
 airflow-stubs@0.0.2
@@ -461,7 +458,6 @@ asciinema@2.4.0
 ascvd@0.5
 asdf-standard@1.4.0
 asdf-unit-schemas@0.2.0
-asdl@0.1.5
 ase-koopmans@0.1.11
 ase@3.24.0
 ase@3.26.0
@@ -485,7 +481,6 @@ ass@1.0.3
 ast-comments@1.2.3
 ast-decompiler@0.8.0
 ast2json@0.4
-ast@0.0.2
 astcheck@0.4.0
 astdoc@1.3.2
 asteval@1.0.6
@@ -505,7 +500,6 @@ asttokens@3.0.1
 asyml-utilities@0.0.2
 async-batcher@0.2.2
 async-chain@0.1.5
-async-class@0.5.0
 async-dns@2.0.0
 async-exit-stack@1.0.1
 async-generator@1.10
@@ -559,7 +553,6 @@ atoparser@3.3.1
 atpublic@5.1
 atpublic@7.0.0
 attention@5.0.0
-attr@0.3.1
 attr@0.3.2
 attrdictionary@1.0.0
 attributes-doc@0.4.0
@@ -657,7 +650,6 @@ awsiotsdk@1.24.0
 awsiotsdk@1.27.0
 awsipranges@0.3.3
 awslambdaric-stubs@0.1.0
-awx-plugins-interfaces@0.0.1a5
 axe-core-python@0.1.0
 axiprop@0.5.7
 ayeaye@0.1.5
@@ -752,7 +744,6 @@ base58@2.1.1
 base58check@1.0.2
 base64io@1.0.3
 base91@1.0.1
-based-utils@1.0.21
 baselineremoval@0.1.6
 basemap-data-hires@2.0.0
 basemap-data@2.0.0
@@ -782,11 +773,9 @@ beartype@0.18.5
 beartype@0.21.0
 beartype@0.22.9
 beautifulsoup4@4.6.3
-beautifulsoup@3.2.2
 beaver@36.3.1
 bech32@1.2.0
 bech32m@1.0.0
-begins@0.9
 behave-html-formatter@0.9.10
 behave-teamcity@0.1.25
 benbotasync@3.0.2
@@ -863,7 +852,6 @@ bleach@3.3.1
 bleach@4.1.0
 blend-modes@2.2.0
 blendmodes@2025
-blindspin@2.0.1
 blingfire@0.1.8
 blinker-herald@0.2.0
 blinker@1.5
@@ -1334,7 +1322,6 @@ broadlink@0.19.0
 brokenaxes@0.6.2
 bronx@2.1.0
 browser-history@0.5.0
-browsermob-proxy@0.8.0
 browserstack-local@1.2.12
 bruges@0.5.4
 brukerapi@0.1.9
@@ -1448,7 +1435,6 @@ caugetch@0.0.1
 causalmodels@0.4.0
 cbcbeat@2023.2.0
 cc-conversation-search@0.5.3
-cc@0.1
 ccard@0.2.0
 ccs-digitalmarketplace-test-utils@7.7.0
 ccxtpro@1.0.1
@@ -1645,12 +1631,10 @@ coalesce@0.3
 coapthon3@1.0.2
 coba@8.0.5
 cobble@0.1.4
-cobertura-clover-transform@1.1.4.post1
 coc-py@4.0.0
 cockroachdb@0.3.5
 codacy-coverage@1.3.11
 code128@0.3
-codecli@0.1
 coded@1.132
 codefind@0.1.7
 codegen-2@2.15.6
@@ -1760,7 +1744,6 @@ configparser@5.3.0
 configparser@6.0.0
 configparser@7.1.0
 configparser@7.2.0
-configreader@0.0.6
 configs@3.0.3
 configue@6.0.1
 confite@1.0.5
@@ -1782,7 +1765,6 @@ constantly@23.10.4
 constrainedlr@0.2.0
 construct@2.10.70
 consul-kv@0.7.4
-consulate@0.6.0
 containerd@1.5.3
 content-size-limit-asgi@0.1.5
 content-types@0.3.0
@@ -1812,7 +1794,6 @@ coolname@2.2.0
 coreapi@2.3.3
 coredumpy@0.5.0
 coreform-cubit-mesh-export@1.11.0
-coreschema@0.0.4
 corextopic@1.1
 corner@2.2.3
 corneto@1.0.0b2
@@ -1895,7 +1876,6 @@ cssselect@1.3.0
 cssutils@1.0.2
 cstag@1.1.0
 cstruct@6.2
-csu@1.19.8
 csv-logger@1.3.0
 csv2md@1.5.0
 csvdiff@0.3.3
@@ -1978,7 +1958,6 @@ databases@0.9.0
 databasez@0.11.3
 databricks-automl-runtime@0.2.21
 databricks-bundles@0.283.0
-databricks-cli@0.17.8
 databricks-dash@0.0.1
 databricks-dbapi@0.6.0
 databricks-dq-module@1.2.5
@@ -1997,8 +1976,6 @@ dataclass-extensions@0.2.4
 dataclass-mapper@2.0.0a4
 dataclass-type-validator@0.1.2
 dataclasses@0.6
-dataclasses@0.7
-dataclasses@0.8
 dataclassy@1.0.1
 datadiff@2.2.0
 datadispatch@1.0.0
@@ -2055,7 +2032,6 @@ dbxslackmessage@0.1.6
 dc-schema@0.0.8
 dccp@1.0.5
 dcentralab-qa-infra-automation@2.3.6
-dci-utils@0.0.1148
 dcl@1.0.0
 dco-check@0.5.0
 dcttools@0.1.4
@@ -2212,7 +2188,6 @@ django-admin-honeypot@1.1.0
 django-admin-hstore-widget@1.2.1
 django-admin-list-filter-dropdown@1.0.3
 django-admin-list-filters@1.3.1
-django-admin-multiple-choice-list-filter@0.1.1
 django-admin-rangefilter@0.13.5
 django-admin-row-actions@0.10.0
 django-admin-tools@0.9.3
@@ -2225,7 +2200,6 @@ django-advanced-password-validation@1.2.0
 django-aesfield@4.0.0
 django-ajax-helpers@0.0.22
 django-ajax-tables@1.1.1
-django-apptemplates@1.5
 django-assets@2.0
 django-auto-logout@0.5.1
 django-autoslug@1.9.9
@@ -2234,7 +2208,6 @@ django-behaviors@0.5.1
 django-better-admin-arrayfield@1.4.2
 django-bootstrap-pagination@1.7.1
 django-bootstrap3-datetimepicker-2@2.8.3
-django-bower@5.2.0
 django-bulk-sync@3.3.0
 django-bulk-update@2.2.0
 django-cache-memoize@0.2.1
@@ -2297,7 +2270,6 @@ django-file-resubmit@0.5.2
 django-filebrowser@4.0.3
 django-filter@1.1.0
 django-firebird@2.2.2
-django-fixture-magic@0.1.5
 django-flatblocks@1.0.0
 django-floppyforms@1.9.0
 django-forms-bootstrap@3.1.0
@@ -2330,7 +2302,6 @@ django-ipware@4.0.2
 django-jazzmin-admin-rangefilter@1.0.0
 django-jenkins@0.110.0
 django-jquery@3.1.0
-django-json-response@1.1.5
 django-json-widget@2.1.1
 django-jsonfield-compat@0.4.4
 django-jsonview@2.0.0
@@ -2410,7 +2381,6 @@ django-tag-parser@3.2
 django-tagging@0.5.0
 django-taggit-helpers@0.1.4
 django-templated-mail@1.1.1
-django-templates-macros@0.2
 django-templates-macros@0.3
 django-templatetag-sugar@1.0
 django-threadlocals@0.10
@@ -2426,7 +2396,6 @@ django-uwsgi@0.2.2
 django-vanilla-views@3.0.0
 django-verify-email@3.0.3
 django-versionfield@1.0.3
-django-vinaigrette@2.0.1
 django-vite-plugin@4.1.2
 django-watson@1.6.3
 django-webpack-loader@3.2.3
@@ -2514,7 +2483,6 @@ dominate@2.9.0
 dominate@2.9.1
 donfig@0.8.1.post1
 dool@1.3.8
-doordeck-headless-sdk@0.190.0
 dorkbot@1.7.0
 dot@0.3.0
 doteki@0.0.9
@@ -2534,7 +2502,6 @@ dpd-static-support@0.0.5
 dpkt@1.9.8
 dppy@0.3.3
 draftjs-exporter@5.2.0
-dragon-ml-toolbox@20.11.0
 dragonfly-grasshopper@1.64.1
 dramatiq@2.0.0
 drawille@0.2.0
@@ -2569,7 +2536,6 @@ durationpy@0.10
 dvc-render@1.0.2
 dvg-debug-functions@2.5.0
 dvg-ringbuffer@1.1.0
-dvp-api@1.9.0
 dwdatareader@1.2.0
 dwight-schrute@0.0.24
 dxfgrabber@1.0.1
@@ -2600,7 +2566,6 @@ easy-exchange-rates@0.2.0
 easy-logs@1.1.2
 easy-mpl@0.21.5
 easy-route@0.0.2
-easy-vision@0.1.0
 easyapi-django@0.23
 easycheck@0.12.1
 easydict@1.13
@@ -2651,7 +2616,6 @@ eintorch@0.2.5
 eiogram@4.1.0
 ekey-bionyxpy@1.0.1
 elasticache-auto-discovery@1.0.0
-elasticsearch-async@6.2.0
 elasticsearch2@2.5.1
 elasticsearch5@5.5.6
 eld@1.0.6
@@ -2696,11 +2660,9 @@ entrypoint2@1.1
 entrypoints@0.4
 enum-compat@0.0.3
 enum-properties@2.4.1
-enum34-custom@0.7.2
 enum34@1.1.10
 enum34@1.1.6
 enums@0.0.2
-env-utils@1.2.0
 envassume@1.0.7
 envbash@1.2.0
 envcrypto@0.2.0
@@ -2816,7 +2778,6 @@ ezcode@1.0.28
 ezenv@0.92
 ezkit@2.0.23
 ezurl@0.1.3.25
-f-yeah@0.6.0
 f5-sphinx-theme@2.9.2
 f90nml@1.5
 faadelays@2023.9.1
@@ -2985,7 +2946,6 @@ flake8-json@24.4.0
 flake8-junit-report-basic@3.0.0
 flake8-mock@0.4
 flake8-module-name@0.2.0
-flake8-mutable@1.2.0
 flake8-pep585@0.1.7
 flake8-plugin-utils@1.3.3
 flake8-tuple@0.4.1
@@ -2999,8 +2959,6 @@ flaml@2.4.1
 flask-behind-proxy@0.1.1
 flask-env@2.0.0
 flask-excel@0.0.7
-flask-gzip@0.2
-flask-humanize@0.3.0
 flask-lambda@0.0.4
 flask-profiler@1.8.1
 flask-rest-jsonapi@0.31.2
@@ -3010,7 +2968,6 @@ flask-restplus@0.13.0
 flask-scss@0.5
 flask-sockets@0.2.1
 flask-talisman@1.1.0
-flask-wtf@0.12
 flaskwebgui@1.1.9
 flat-table@1.1.1
 flatbuffers@25.9.23
@@ -3149,7 +3106,6 @@ funlog@0.2.1
 funppy@0.5.2
 future@1.0.0
 futures3@1.0.0
-futures@3.4.0
 fuzzy-match@0.0.1
 fuzzyfinder@2.3.0
 fuzzywuzzy-stubs@0.0.1
@@ -3605,7 +3561,6 @@ idna@3.11
 idna@3.2
 idna@3.7
 idspy-dictionaries@40001.5.1
-iduoliao-ml@1.0.335
 ifaddr@0.1.7
 ifaddr@0.2.0
 ifcfg@0.24
@@ -3628,7 +3583,6 @@ imath@0.0.2
 imbalance-xgboost@0.8.1
 imblearn@0.0
 imgdiff@1.8.0
-imgix@4.0.0
 imia@0.5.3
 immutable-views@0.6.1
 immutabledict@4.2.2
@@ -3653,9 +3607,6 @@ indico-fonts@1.2
 indipyclient@0.9.1
 inels-mqtt-new@0.2.23
 inferentia-hwm@1.0
-infi-exceptools@0.2.15
-infi-instruct@0.6.33
-infi-traceback@0.3.17
 infix@1.2
 inflect@2.1.0
 inflect@5.6.2
@@ -3677,7 +3628,6 @@ inotify-simple@2.0.1
 inputs@0.5
 insegel@1.3.1
 insensitive-dict@1.0.0
-inspect-mate@0.0.2
 inspect2@0.1.2
 instagram-private-api@1.6.0.0
 install-jdk@1.1.0
@@ -3713,7 +3663,6 @@ ip2location@8.11.0
 ip2proxy@3.6.0
 ip3country@0.4.0
 ipaddress@1.0.23
-ipapy@0.0.9.0
 ipatok@0.4.2
 ipcorepackager@0.6
 ipfn@1.4.4
@@ -3768,7 +3717,6 @@ iterators@0.0.2
 iterators@0.2.0
 iterify@0.1.0
 iterm2@2.13
-itermate@1.0.2
 iterpop@0.4.1
 iterproxy@0.3.1
 iterpy@1.12.0
@@ -3910,7 +3858,6 @@ jsoncanon@0.2.3
 jsoncomparison@1.1.0
 jsonconversion@1.2.1
 jsondiff@2.2.1
-jsonform@0.0.2
 jsonlite@0.0.11
 jsonlog@4.0.0
 jsonmask@0.1.1
@@ -3934,7 +3881,6 @@ jsonschema-to-openapi@0.2.1
 jsonschema@2.3.0
 jsonschema@2.6.0
 jsonseq@1.0.0
-jsonsir@0.0.2
 jsonstream@0.0.1
 jsontable@0.1.1
 jsun@1.0a1
@@ -4012,7 +3958,6 @@ kanboard@1.1.7
 kangrollgenecancer@0.0.125
 kanjize@1.6.1
 kantoku@0.18.3
-kappa@0.7.0
 kaptan@0.6.0
 kaqing@2.0.214
 karapy@0.5.7
@@ -4052,7 +3997,6 @@ kiss-headers@2.5.0
 kiutils@1.4.8
 kivy-garden-graph@0.4.0
 kkpyutil@1.47.0
-klio@22.3.0
 klvdata@0.0.3
 klyne@0.3.0
 kmeans-pytorch@0.3
@@ -4063,7 +4007,6 @@ kms@1.0.1.3
 kneed@0.8.5
 knoemaupload@0.4.3
 knx-frontend@2026.1.15.112308
-koalas@1.8.2
 koda@1.4.0
 kodistubs@21.0.0
 kolibri@0.19.0
@@ -4090,7 +4033,6 @@ kwargshelper@2.7.1
 kwonly-args@1.0.10
 kyber-py@1.2.0
 l2m2@0.0.62
-l@0.11.0
 laaos@2.1.1
 label-converter@0.15
 labjack-ljm@1.23.0
@@ -4179,7 +4121,6 @@ lexicon@3.0.0
 lexilang@1.0.6
 lexorank-py@0.2.0
 lhsmdu@1.1
-lib-adtech@3.9.11
 lib-cidr-trie@1.2.8
 lib@4.0.0
 libadvian@1.9.0
@@ -4207,7 +4148,6 @@ license-expression@30.4.4
 license-header-check@0.2.1
 license-scanner@0.4.4
 licenseheaders@0.8.8
-lidipy@0.3.1
 lidipy@0.3.2
 life360@7.0.1
 lifx-async@5.0.1
@@ -4305,7 +4245,6 @@ logomaker@0.8.7
 logscope@0.1.10
 logwrap@11.1.1
 loki-logger-handler@1.1.2
-lolcat@1.4
 lollipop@1.1.8
 london-tube-status@0.7
 lonelypsp@0.0.47
@@ -4381,7 +4320,6 @@ mando@0.6.4
 mando@0.8.2
 mangono-odoo-migration@1.1.3
 manhole@1.8.1
-manuf@1.1.5
 map@1.3.0
 mapie@1.2.0
 mapz@1.1.28
@@ -4512,7 +4450,6 @@ metar-taf-parser-mivek@1.10.2
 metar@1.11.0
 metaset@2.0.0
 meteo-lt-pkg@0.4.0
-meteocalc@1.1.0
 methoddispatch@5.0.1
 methodtools@0.4.7
 metomi-isodatetime@1!3.1.0
@@ -4551,7 +4488,6 @@ mindsdb-sql@0.21.0
 minidump@0.0.24
 minilin@0.4.1
 minilog@2.3.1
-minimock@1.2.8
 mininet@2.3.0.dev6
 minizinc@0.10.0
 minrpc@0.2.0
@@ -4603,7 +4539,6 @@ mo-future@7.678.25061
 mo-future@7.685.25166
 mo-installer@0.3.0
 mock-alchemy@0.2.6
-mock-django@0.6.10
 mock-firestore-sharp@0.13.22
 mock-firestore@0.11.0
 mock-serial@0.0.1
@@ -4672,7 +4607,6 @@ mozterm@1.0.0
 mpc-obscodes@2025.10.1
 mpegdash@0.4.0
 mpl-animators@1.2.4
-mpl-axes-aligner@1.3
 mpl-interactions@0.24.2
 mpl-point-clicker@0.4.1
 mpl-scatter-density@0.8
@@ -4739,7 +4673,6 @@ multivolumefile@0.2.3
 munkres@1.1.4
 murl@0.5.1
 musicbrainzngs@0.7.1
-mutablerecords@0.4.1
 mutagen@1.45.1
 mutagen@1.47.0
 mutwo@0.50.1
@@ -4861,7 +4794,6 @@ netbox-secrets@2.4.2
 netbox-storage@0.0.0.0.946
 netbox-topology-views@4.5.0
 netcat@0.0.1a0
-neteria@1.0.2
 neterr@1.1.1
 netflix-spectator-py@1.1.2
 netflow@0.12.2
@@ -4992,7 +4924,6 @@ nvcc4jupyter@1.2.1
 nvidia-ml-py@13.580.82
 nvidia-ml-py@13.590.44
 nvsmi@0.4.2
-nxpd@0.2.0
 oasis-data-manager@0.1.6
 oath@1.4.4
 oauth2-client@1.4.2
@@ -5038,7 +4969,6 @@ odooly@2.5.2
 odoorpc@0.10.1
 odp-amsterdam@6.1.2
 oemof-tools@0.4.3
-office365api@0.0.9
 offspring@0.1.1
 ofunctions-string-handling@1.3.1
 ofunctions-threading@2.3.0
@@ -5134,7 +5064,6 @@ optional-py@2.0.0
 optionaldict@0.1.2
 optionsfactory@1.0.11
 optparse-pretty@0.1.1
-optunity@1.1.1
 opuslib-next@1.1.5
 opytional@0.1.0
 orange3-educational@0.8.1
@@ -5152,7 +5081,6 @@ orgparse@0.4.20251020
 orsopy@1.2.2
 orthauth@0.0.19
 oryx@0.2.9
-os-diskconfig-python-novaclient-ext@0.1.3
 osbot-utils@3.71.0
 oscpy@0.6.0
 osef@3.3.1
@@ -5260,7 +5188,6 @@ parse-accept-language@0.1.2
 parse-torrent-title@2.8.1
 parse@1.20.2
 parse@1.6.6
-parsedatetime@2.4
 parsedatetime@2.6
 parsett@1.8.3
 parsevasp@3.4.0
@@ -5411,7 +5338,6 @@ phonenumbers@9.0.21
 phonenumbers@9.0.5
 phonenumberslite@8.13.55
 phonenumberslite@9.0.21
-phonetic-alphabet@0.1.0
 photerr@1.4.0
 photovoltaic@0.1.9
 phx-class-registry@4.1.0
@@ -5591,7 +5517,6 @@ preppy@5.1.0
 preprocess-cancellation@0.3a2
 prerun@1.1.3
 pressagio@0.1.6
-presto-client@0.303.0
 presto-types-parser@0.0.2
 pretend@1.0.9
 pretix-pages@1.6.3
@@ -5703,7 +5628,6 @@ pulsectl@24.11.0
 pulsectl@24.12.0
 punq@0.8.0.dev1
 pure-eval@0.2.3
-pure-sasl@0.6.2
 puremagic@1.14
 puremagic@1.28
 puremagic@1.30
@@ -5778,9 +5702,7 @@ py3dmol@2.5.3
 py3dns@4.0.2
 py3langid@0.2.2
 py3langid@0.3.0
-py3o-formats@0.3
 py3oauth2@0.4.7
-py3rijndael@0.3.3
 py3tftp@1.3.0
 py4j@0.10.6
 py4j@0.10.9.7
@@ -5832,7 +5754,6 @@ pybatchexecute@1.0.0
 pybaum@0.1.3
 pyben@0.3.2
 pybengali@0.0.1
-pybind11-global@3.0.1
 pybind11-stubgen@2.5.5
 pybind11@3.0.1
 pybindgen@0.22.1
@@ -5854,7 +5775,6 @@ pycdlib@1.14.0
 pycfdns@3.0.0
 pycg@0.0.8
 pychecktype@1.4.1
-pychef@0.3.0
 pychemometrics@0.13.6
 pychoir@0.0.29
 pychord@1.2.2
@@ -5886,7 +5806,6 @@ pycommand@0.4.0
 pycomplete@0.4.0
 pycompliance@0.0.1
 pycomposefile@0.0.34
-pyconll@4.0.0
 pycoolmasternet-async@0.2.4
 pycountry-convert@0.7.2
 pycowsay@0.0.0.2
@@ -5906,7 +5825,6 @@ pycstruct@0.12.2
 pyctuator@1.2.0
 pycuber@0.2.2
 pycubexr@2.1.0
-pycycle@0.0.8
 pycync@0.5.0
 pydal@20260110.1
 pydanclick@0.5.1
@@ -5942,7 +5860,6 @@ pydocumentdb@2.3.5
 pydoe3@1.6.2
 pydoods@1.0.2
 pydos2unix@0.0.1
-pydrive@1.3.1
 pydrmetrics@0.0.7
 pydroid-ipcam@3.0.0
 pydroplet@2.3.4
@@ -6004,7 +5921,6 @@ pyflakes@3.1.0
 pyflakes@3.2.0
 pyflakes@3.4.0
 pyflame@0.3.2
-pyflic@2.0.4
 pyfluidsynth@1.3.4
 pyfmodex@0.7.2
 pyfnip@0.2
@@ -6047,7 +5963,6 @@ pygubu@0.39
 pyhabitat@1.1.8
 pyham-ax25@1.0.3
 pyhamcrest@2.1.0
-pyhaproxy@0.3.7
 pyhausbus@1.0.44
 pyhcl@0.4.5
 pyhdfe@0.2.0
@@ -6091,7 +6006,6 @@ pyjoules@0.5.1
 pyjson@1.4.1
 pyjsonpatch@0.1.3
 pyjsonpath@1.2.3
-pyjsparser@2.7.1
 pyjvcprojector@2.0.1
 pyjwt@1.7.1
 pyjwt@2.1.0
@@ -6238,7 +6152,6 @@ pyodide-http@0.2.2
 pyodide-py@0.29.1
 pyodide@0.19.0a1
 pyonenote@0.0.2
-pyoo@1.4
 pyope@0.2.2
 pyopengl@3.1.10
 pyopenms-viz@1.0.0
@@ -6311,7 +6224,6 @@ pyramid-retry@2.1.1
 pyramid-services@1.1
 pyramid-sqlalchemy@1.6
 pyramid-storage@1.3.2
-pyramid-unicodedammit@0.0.1
 pyransac3d@0.6.0
 pyrapl@0.2.3.1
 pyrate-limiter@2.10.0
@@ -6441,7 +6353,6 @@ pytextgrid@0.1.4
 pytfvars@1.0.3
 python-3parclient@4.2.14
 python-a2s@1.4.1
-python-aqi@0.6.1
 python-argtools@0.0.2
 python-avatars@1.4.1
 python-axolotl@0.2.3
@@ -6473,7 +6384,6 @@ python-easyconfig@0.1.7
 python-editor@1.0.4
 python-elastic-logstash@2.0.0
 python-encode-uri@0.0.3
-python-env@1.0.0
 python-envcfg@0.2.0
 python-ffmpeg-video-streaming@0.1.16
 python-frontmatter@1.1.0
@@ -6481,9 +6391,7 @@ python-fsutil@0.16.0
 python-fullykiosk@0.0.14
 python-gc100@1.0.3a0
 python-generate-mac@1.3.1
-python-geoip-geolite2@2015.0303
 python-geoip-python3@1.3
-python-geoip@1.2
 python-gettext@5.0
 python-git-info@0.8.3
 python-gnupg@0.4.8
@@ -6491,7 +6399,6 @@ python-gnupg@0.5.6
 python-gpt-image@0.4.0
 python-healthchecklib@0.1.1
 python-hll@0.1.3
-python-hosts@1.1.2
 python-hpilo@4.4.3
 python-http-client@3.3.7
 python-i18n@0.3.9
@@ -6532,11 +6439,9 @@ python-multipart@0.0.20
 python-multipart@0.0.21
 python-multipart@0.0.6
 python-musicpd@0.9.2
-python-must@3.29.99
 python-networkdays@1.2
 python-nginx@1.5.7
 python-ntlm3@1.0.2
-python-ntlm@1.1.0
 python-openevse-http@0.2.2
 python-openflow@2021.1
 python-opensesame@3.3.15a1
@@ -6564,8 +6469,6 @@ python-scrapyd-api@2.1.2
 python-secp256k1-cardano@0.2.4
 python-settings@0.2.3
 python-shogi@1.1.1
-python-smail@0.9.0
-python-smpp@0.1.9
 python-snappy@0.7.3
 python-social-auth@0.3.6
 python-socks@2.8.0
@@ -6662,12 +6565,9 @@ pyuff@2.5.1
 pyunfoldedcircleremote@0.15.6
 pyunormalize@17.0.0
 pyupc-ean@2.20.10
-pyuptimerobot@24.0.1
 pyuri@0.3.1
 pyusb@1.3.1
 pyuseragents@1.0.5
-pyuserinput@0.1.11
-pyutilib-component-core@4.6.4
 pyutils-spirit@1.5.5.8.1
 pyvcd@0.4.1
 pyvcg@1.0.10
@@ -6797,7 +6697,6 @@ ratelimit-stubs@2.2.1
 ratelimiter@1.2.0.post0
 ratelimitingfilter@1.5
 ratemate@0.1.0
-rauth@0.7.3
 ray-embedding@0.17.5
 razdel@0.5.0
 rbamlib@25.4
@@ -6833,7 +6732,6 @@ redditwarp@1.3.0
 redis@2.10.6
 redis@3.5.3
 redispy@3.0.0
-redlock@1.2.0
 redo@3.0.0
 redshift@0.0.1
 redys@0.9.20
@@ -6861,7 +6759,6 @@ renoir@1.8.0
 repo@0.3.0
 reporters-db@3.2.63
 reportlab@4.4.9
-repoze-debug@1.1
 repoze-lru@0.7
 repoze-profile@2.3
 repoze-sendmail@4.4.1
@@ -7081,7 +6978,6 @@ scale-json-binary@0.0.7
 scalpl@0.4.2
 scamper-pywarts@0.2.1
 scan-build@2.0.20
-scanf@1.6.0
 scapy@2.7.0
 scc4onnx@1.0.7
 scgraph@2.15.0
@@ -7117,7 +7013,6 @@ scmver@1.9
 scons@4.10.1
 scooby@0.11.0
 scp@0.14.5
-scpclient@0.7
 scrapy-random-useragent-pro@1.0.0
 scrapy-rotating-proxies@0.6.2
 scrapy-s3pipeline@0.7.0
@@ -7137,7 +7032,6 @@ seaborn-polars@0.0.2.6
 seaborn@0.13.2
 seam-carving@1.1.0
 seawater@3.3.5
-secrets@1.0.2
 secsgml@0.3.5
 sectools@1.5.1
 secure-smtplib@0.1.1
@@ -7190,7 +7084,6 @@ serpent@1.28
 serpent@1.42
 serpenttools@0.11.0
 serviceping@21.6.718832
-sesd@0.2
 session-info2@0.3
 setoptconf-tmp@0.3.1
 setoptconf@0.3.0
@@ -7333,7 +7226,6 @@ skglm@0.5
 skipole@5.6.3
 skl2onnx@1.19.1
 sklearn-compat@0.1.5
-sklearn-deap2@0.2.2
 sklearn-migrator@0.21.1
 sklearn-pandas@2.2.0
 sklearn-preprocessing@0.1.0
@@ -7362,7 +7254,6 @@ sling-mac-arm64@1.4.10.post2
 sling@1.5.4
 sliplib@0.7.1
 slugid@2.0.0
-slumber@0.7.1
 slurmio@0.1.2
 sluurp@0.4.6
 sly@0.5
@@ -7544,7 +7435,6 @@ sphinxcontrib-serializinghtml@2.0.0
 spicepy@1.0.5
 spiffworkflow@3.1.2
 spintax@1.0.4
-spire@0.4.2
 splinebox@0.5.1
 splines@0.3.3
 split-file-reader@0.1.4
@@ -7606,7 +7496,6 @@ sqlite-fts4@1.0.3
 sqlite4@0.1.1
 sqlitecloud@0.0.84
 sqlitetools@0.0.7
-sqlmap@1.10
 sqlparams@6.2.0
 sqlparse@0.2.4
 sqlparse@0.3.1
@@ -7860,7 +7749,6 @@ tdt@0.7.2
 teamcity-messages@1.33
 tee-output@0.4.16
 tee-subprocess@1.2.0
-tee@0.0.3
 telegram-text@0.2.0
 telepath@0.3.1
 telethon-session-sqlalchemy@0.2.16
@@ -7970,7 +7858,6 @@ thingy@0.10.0
 thorpy@2.1.12
 thread-with-results@1.0.1
 thread6@0.2.0
-threadloop@1.0.2
 threadpool@1.3.2
 threadpoolctl@3.6.0
 threads-api@1.2.0
@@ -8000,7 +7887,6 @@ timehash@1.2
 timelength@3.0.2
 timeliner@0.0
 timeloop-ng@1.0.0
-timeloop@1.0.2
 timelyosc@13
 timeout-function-decorator@2.0.0
 timeout-timer@0.2.0
@@ -8149,7 +8035,6 @@ translitua@1.3.2
 travertino@0.5.3
 trec-car-tools@2.6
 tree-config@1.0.2
-tree-format@0.1.2
 tree-math@0.2.1
 treeinterpreter@0.2.3
 treepath@3.0.2
@@ -8203,7 +8088,6 @@ tweedie@0.0.9
 tweet-preprocessor@0.6.0
 twentemilieu@2.2.1
 twitchio@3.1.0
-twitter-common-lang@0.3.11
 twitter-text-parser@3.0.0
 txaio@25.12.2
 txt2tags@3.9
@@ -8445,8 +8329,6 @@ typing-extensions@4.5.0
 typing-extensions@4.7.1
 typing-extensions@4.8.0
 typing-utils@0.1.0
-typing@3.10.0.0
-typing@3.7.4.3
 tzcron@1.0.0
 tzdata@2025.3
 tzif-parser@0.0.16
@@ -8480,7 +8362,6 @@ umsgpack@0.1.0
 unavailable-object@0.0.2
 uncalled@0.1.8
 uncertainties@3.2.4
-uncertainty-metrics@0.0.81
 uncompresspy@0.4.1
 uncurl@0.0.11
 undecorated@0.3.0
@@ -8500,7 +8381,6 @@ unidip@0.1.1
 unification@0.3.1
 unihandecode@0.81
 unionfind@0.2.1
-unipath@1.1
 uniplot@0.17.1
 unique-log-filter@0.1.0
 unique-namer@1.6.2
@@ -8631,7 +8511,6 @@ vcd-api-schemas-type@10.3.0.dev72
 vcdvcd@2.6.0
 vcfpy@0.14.2
 vcrpy@8.1.1
-vcversioner@2.16.0.0
 vdf@3.4
 vecstack@0.5.2
 vega-datasets@0.9.0
@@ -8729,7 +8608,6 @@ webcolors@1.13
 webcolors@24.8.0
 webcolors@25.10.0
 webencodings@0.5.1
-weberror@0.13.1
 weblate-language-data@2026.1
 webmail-domains@0.22
 webmin-xmlrpc@0.0.2
@@ -8835,7 +8713,6 @@ wryte@1.0.0
 ws4py-sslupdate@0.5.1b0
 ws4py@0.6.0
 wsgigo@1.3.0
-wsgilog@0.3.1
 wsgiserver@1.3
 wslink@1.12.4
 wslpath@0.4.2
@@ -9006,11 +8883,9 @@ zoopt@0.4.2
 zope-event@6.1
 zope-schema@8.1
 zope-testing@6.1
-zorg@0.0.5
 zserio@2.18.0
 zthreading@0.1.19
 zvamz@0.0.135
 zwift-client@0.2.0
 zxcvbn@4.5.0
 zzzz-mylib-23-4@0.146
-
