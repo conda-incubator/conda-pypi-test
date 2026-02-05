@@ -2,6 +2,10 @@
 
 A simple development conda channel for testing repodata.
 
+> [!WARNING]
+> This is for testing new repodata formats and it is not for production use!
+> If you are looking for production index generation for a channel use [conda-index](https://github.com/conda/conda-index)).
+
 ## Setup
 
 Create the conda environment:
