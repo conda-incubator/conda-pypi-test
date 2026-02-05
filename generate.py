@@ -127,9 +127,9 @@ def parse_packages_file(filepath: Path) -> List[Tuple[str, str]]:
             if not line or line.startswith("#"):
                 continue
             
-            # Parse package specification
-            if "@" in line:
-                parts = line.split("@", 1)
+            # Parse package specification (format: package-name==version)
+            if "==" in line:
+                parts = line.split("==", 1)
                 if len(parts) == 2:
                     name, version = parts
                     packages.append((name.strip(), version.strip()))
@@ -137,7 +137,7 @@ def parse_packages_file(filepath: Path) -> List[Tuple[str, str]]:
                     print(f"  ⚠️  Invalid format on line {line_num}: {line}")
             else:
                 print(f"  ⚠️  Missing version on line {line_num}: {line}")
-                print(f"      Expected format: package-name@version")
+                print(f"      Expected format: package-name==version")
     
     return packages
 
@@ -188,10 +188,10 @@ def generate_repodata(
                     pkg_whls[key] = result
                     print(f"  ✅ [{completed}/{len(packages)}] {name} {version}")
                 else:
-                    failed_packages.append(f"{name}@{version}")
+                    failed_packages.append(f"{name}=={version}")
                     print(f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - no wheel found")
             except Exception as e:
-                failed_packages.append(f"{name}@{version}")
+                failed_packages.append(f"{name}=={version}")
                 print(f"  ❌ [{completed}/{len(packages)}] {name} {version}: {e}")
     
     # Check if any packages failed
