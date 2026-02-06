@@ -1,0 +1,59 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'packages.txt'
+      - 'generate.py'
+      - 'test_generate.py'
+      - 'environment.yml'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment.yml
+          cache-environment: true
+          init-shell: bash
+      
+      - name: Install pytest
+        shell: micromamba-shell {0}
+        run: |
+          pip install pytest
+      
+      - name: Generate repodata
+        shell: micromamba-shell {0}
+        run: |
+          python generate.py
+      
+      - name: Run tests
+        shell: micromamba-shell {0}
+        run: |
+          pytest -v test_generate.py
+      
+      - name: Upload generated artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-repodata
+          path: |
+            noarch/repodata.json
+            noarch/repodata.json.bz2
+            noarch/repodata.json.zst
+            channeldata.json
+            noarch/index.html
+          if-no-files-found: error
