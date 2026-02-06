@@ -7428,6 +7428,8 @@ sphinxcontrib-htmlhelp==2.1.0
 sphinxcontrib-imagehelper==1.1.1
 sphinxcontrib-imagesvg==0.1
 sphinxcontrib-jsmath==1.0.1
+sphinxcontrib-plantuml==0.21
+sphinxcontrib-plantuml==0.31
 sphinxcontrib-qthelp==1.0.3
 sphinxcontrib-qthelp==2.0.0
 sphinxcontrib-serializinghtml==1.1.5
