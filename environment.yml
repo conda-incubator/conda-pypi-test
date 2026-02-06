@@ -1,4 +1,4 @@
-name: dev-channel
+name: conda-pypi-test
 channels:
   - conda-forge
 dependencies:

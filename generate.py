@@ -294,7 +294,7 @@ def generate_index_html(output_dir: Path) -> None:
     html_content = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>dev-channel - noarch</title>
+    <title>conda-pypi-test - noarch</title>
     <style>
         body {{ font-family: system-ui, -apple-system, sans-serif; padding: 2rem; }}
         h1 {{ color: #333; }}
@@ -306,7 +306,7 @@ def generate_index_html(output_dir: Path) -> None:
     </style>
 </head>
 <body>
-    <h1>dev-channel - noarch</h1>
+    <h1>conda-pypi-test - noarch</h1>
     <ul>
 {file_list}
     </ul>

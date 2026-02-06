@@ -1,6 +1,6 @@
-# dev-channel
+# conda-pypi-test
 
-A simple development conda channel for testing repodata.
+A simple development conda channel for testing repodata for conda-pypi.
 
 > [!WARNING]
 > This is for testing new repodata formats and it is not for production use!
@@ -12,7 +12,7 @@ Create the conda environment:
 
 ```bash
 conda env create -f environment.yml
-conda activate dev-channel
+conda activate conda-pypi-test
 ```
 
 ## Quick Start
@@ -53,6 +53,6 @@ When you push changes to `packages.txt`, GitHub Actions will automatically:
 Use the channel from GitHub:
 
 ```bash
-conda install -c https://github.com/danyeaw/dev-channel/releases/download/noarch package-name
+conda install -c https://github.com/conda-incubator/conda-pypi-test/releases/download/noarch package-name
 ```
 
