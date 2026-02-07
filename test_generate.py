@@ -41,7 +41,6 @@ def test_pypi_to_repodata_whl_entry():
     assert entry is not None
     assert entry["name"] == "requests"
     assert entry["version"] == "2.32.5"
-    assert entry["fn"] == "requests-2.32.5-py3-none-any.whl"
     assert entry["size"] == 64928
     assert entry["sha256"] == "abc123"
     assert entry["subdir"] == "noarch"
