@@ -14,10 +14,11 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
+import time
 
 
 # Grayskull mapping URL
-GRAYSKULL_MAPPING_URL = "https://github.com/regro/cf-graph-countyfair/blob/master/mappings/pypi/grayskull_pypi_mapping.json"
+GRAYSKULL_MAPPING_URL = "https://raw.githubusercontent.com/regro/cf-graph-countyfair/master/mappings/pypi/grayskull_pypi_mapping.json"
 
 # Global cache for the mapping data
 _MAPPING_CACHE: Optional[Dict[str, Dict[str, str]]] = None
@@ -145,31 +146,44 @@ def pypi_to_repodata_whl_entry(
     return entry
 
 
-def get_repodata_entry(name: str, version: str) -> Optional[Dict[str, Any]]:
+def get_repodata_entry(name: str, version: str, max_retries: int = 3) -> Optional[Dict[str, Any]]:
     """
     Fetch package data from PyPI and convert to repodata entry.
 
     Args:
         name: Package name
         version: Package version
+        max_retries: Maximum number of retry attempts
 
     Returns:
         Repodata entry dictionary or None if failed
     """
     pypi_endpoint = f"https://pypi.org/pypi/{name}/{version}/json"
 
-    try:
-        response = requests.get(pypi_endpoint, timeout=30)
-        response.raise_for_status()
-        pypi_data = response.json()
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(pypi_endpoint, timeout=30)
+            response.raise_for_status()
+            pypi_data = response.json()
 
-        if not pypi_data:
+            if not pypi_data:
+                return None
+
+            return pypi_to_repodata_whl_entry(pypi_data)
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                print(f"  ⚠️  Error fetching {name} {version} (attempt {attempt + 1}/{max_retries}): {e}")
+                print(f"     Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                print(f"  ❌ Error fetching {name} {version} after {max_retries} attempts: {e}")
+                return None
+        except Exception as e:
+            print(f"  ❌ Error processing {name} {version}: {e}")
             return None
-
-        return pypi_to_repodata_whl_entry(pypi_data)
-    except Exception as e:
-        print(f"  ❌ Error fetching {name} {version}: {e}")
-        return None
+    
+    return None
 
 
 def parse_packages_file(filepath: Path) -> List[Tuple[str, str]]:
