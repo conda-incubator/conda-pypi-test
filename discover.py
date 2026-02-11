@@ -21,12 +21,9 @@ import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
-
-import httpx
+from unearth import PackageFinder
 
 PYPI_SIMPLE_INDEX_URL = "https://pypi.org/simple/"
-PYPI_JSON_URL = "https://pypi.org/pypi"
 
 _thread_local = threading.local()
 
@@ -36,7 +33,7 @@ def normalize_package_name(name: str) -> str:
     return name.lower().replace("_", "-")
 
 
-def fetch_package_names_pypi_simple(timeout: int = 120) -> List[str]:
+def fetch_package_names_pypi_simple(timeout: int = 120) -> list[str]:
     """Fetch all PyPI package names from the Simple Index (PEP 503)."""
     req = urllib.request.Request(
         PYPI_SIMPLE_INDEX_URL,
@@ -54,127 +51,59 @@ def fetch_package_names_pypi_simple(timeout: int = 120) -> List[str]:
     return sorted(set(names))
 
 
-def _version_sort_key(v: str) -> Tuple[int, ...]:
-    """Sort key for version strings (numeric prefix only)."""
-    m = re.match(r"^(\d+(?:\.\d+)*)", str(v))
-    if not m:
-        return (0,)
-    return tuple(int(x) for x in m.group(1).split("."))
-
-
-def _fetch_simple_page(name: str, client: Any, timeout: int) -> Optional[str]:
-    """Fetch /simple/<name>/ page; return HTML body or None."""
-    url = f"{PYPI_SIMPLE_INDEX_URL}{name}/"
-    try:
-        if client is not None:
-            r = client.get(url, timeout=timeout, headers={"Accept": "text/html"})
-            r.raise_for_status()
-            return r.text
-        req = urllib.request.Request(url, headers={"Accept": "text/html"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode()
-    except Exception:
-        return None
-
-
-def _parse_simple_page_for_wheels(html: str, pure_only: bool) -> Optional[Tuple[str, bool]]:
-    """
-    Parse simple index HTML for wheel filenames. Return (latest_version, has_required_wheel) or None.
-    Wheel filename format: name-version-{py}-{abi}-{platform}.whl
-    """
-    whl_filenames = re.findall(
-        r"([a-zA-Z0-9_.-]+-\d+[\w.]*-[a-zA-Z0-9_.-]+-[a-zA-Z0-9_.-]+-[a-zA-Z0-9_.-]+\.whl)",
-        html,
-    )
-    if not whl_filenames:
-        return None
-    # Group by version: version -> (has_pure, has_any)
-    by_version: dict[str, Tuple[bool, bool]] = {}
-    for fn in set(whl_filenames):
-        parts = fn[:-4].split("-")
-        if len(parts) < 5:
-            continue
-        version = parts[-4]
-        abi, platform = parts[-2], parts[-1]
-        has_pure = abi == "none" and platform == "any"
-        p, a = by_version.get(version, (False, False))
-        by_version[version] = (p or has_pure, True)
-    if not by_version:
-        return None
-    best_version = max(by_version.keys(), key=_version_sort_key)
-    has_pure, has_any = by_version[best_version]
-    ok = has_pure if pure_only else has_any
-    return (best_version, ok) if ok else None
-
-
 def fetch_package_version_and_wheels(
     name: str,
     pure_only: bool = True,
     timeout: int = 30,
-    client: Any = None,
-    use_simple_first: bool = True,
-) -> Optional[Tuple[str, bool]]:
+    finder: PackageFinder | None = None,
+) -> tuple[str, bool] | None:
     """
     Fetch latest version and wheel availability for one package from PyPI.
-    client: httpx.Client for connection reuse (and Simple API); None to use urllib.
+    Uses unearth's PackageFinder to select best matching candidates.
     Returns (version, ok) or None.
     """
-    if use_simple_first and client is not None:
-        html = _fetch_simple_page(name, client, timeout)
-        if html:
-            out = _parse_simple_page_for_wheels(html, pure_only)
-            if out is not None:
-                return out
-    # Fallback: full JSON API (has definitive latest version and file list)
-    url = f"{PYPI_JSON_URL}/{name}/json"
+    del timeout
+    if finder is None:
+        finder = PackageFinder(index_urls=[PYPI_SIMPLE_INDEX_URL])
     try:
-        if client is not None:
-            r = client.get(url, timeout=timeout, headers={"Accept": "application/json"})
-            r.raise_for_status()
-            data = r.json()
-        else:
-            req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = json.loads(resp.read().decode())
+        packages = finder.find_all_packages(name)
     except Exception:
         return None
-    info = data.get("info", {})
-    version = info.get("version")
-    if not version:
-        return None
-    urls = data.get("urls", [])
-    if not urls:
-        urls = data.get("releases", {}).get(version, [])
-    has_pure = False
-    has_any_wheel = False
-    for f in urls:
-        if f.get("packagetype") != "bdist_wheel":
+    for package in packages:
+        try:
+            pkg_json = package.as_json()
+        except Exception:
+            pkg_json = {}
+        version = pkg_json.get("version") if isinstance(pkg_json, dict) else None
+        link = pkg_json.get("link") if isinstance(pkg_json, dict) else None
+        url = link.get("url") if isinstance(link, dict) else None
+        if not url:
+            url = getattr(getattr(package, "link", None), "url", "")
+        if not isinstance(url, str) or not url.endswith(".whl"):
             continue
-        has_any_wheel = True
-        if (f.get("filename") or "").endswith("none-any.whl"):
-            has_pure = True
-            break
-    ok = has_pure if pure_only else has_any_wheel
-    return (version, ok) if ok else None
+        if pure_only and not url.endswith("none-any.whl"):
+            continue
+        if not version:
+            version = getattr(package, "version", None)
+        if not version:
+            continue
+        return (str(version), True)
+    return None
 
 
 def _init_worker_client() -> None:
-    """Initialize httpx client for this worker (HTTP/2 when h2 is available)."""
-    try:
-        _thread_local.client = httpx.Client(http2=True)
-    except Exception:
-        _thread_local.client = httpx.Client(http2=False)
+    """Initialize PackageFinder for this worker."""
+    _thread_local.finder = PackageFinder(index_urls=[PYPI_SIMPLE_INDEX_URL])
 
 
-def _fetch_one(name: str, pure_only: bool, timeout: int) -> Optional[Tuple[str, bool]]:
-    """One package lookup using this worker's HTTP client."""
-    client = getattr(_thread_local, "client", None)
+def _fetch_one(name: str, pure_only: bool, timeout: int) -> tuple[str, bool] | None:
+    """One package lookup using this worker's finder."""
+    finder = getattr(_thread_local, "finder", None)
     return fetch_package_version_and_wheels(
         name,
         pure_only=pure_only,
         timeout=timeout,
-        client=client,
-        use_simple_first=client is not None,
+        finder=finder,
     )
 
 
@@ -184,7 +113,7 @@ def discover_from_names_file(
     workers: int = 50,
     delay: float = 0.0,
     timeout: int = 30,
-) -> List[Tuple[str, str]]:
+) -> list[tuple[str, str]]:
     """Read names from file; for each, fetch PyPI metadata and return (name, version) for packages with wheels."""
     names = []
     with open(names_path) as f:
@@ -195,7 +124,7 @@ def discover_from_names_file(
             names.append(line)
     if not names:
         return []
-    results: List[Tuple[str, str]] = []
+    results: list[tuple[str, str]] = []
     done = 0
     start = time.perf_counter()
     init = _init_worker_client
