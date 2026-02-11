@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import random
 import sqlite3
 from pathlib import Path
 
@@ -96,53 +97,76 @@ async def process_requirements(
     cache_db_path: Path,
     output_db_path: Path,
     concurrency: int,
-) -> tuple[int, int]:
+    timeout_seconds: int,
+) -> tuple[int, int, bool, int]:
     """Resolve requirements concurrently and write rows into sqlite."""
     if concurrency < 1:
         raise ValueError("concurrency must be >= 1")
+    if timeout_seconds < 1:
+        raise ValueError("timeout_seconds must be >= 1")
 
     connection = create_results_db(output_db_path)
     finder = create_finder(cache_db_path)
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    for requirement in requirements:
+        queue.put_nowait(requirement)
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + float(timeout_seconds)
     lock = asyncio.Lock()
-    semaphore = asyncio.Semaphore(concurrency)
     found = 0
     missing = 0
     completed = 0
     total = len(requirements)
     in_progress: set[str] = set()
+    timed_out = False
 
     async def report_progress() -> None:
         while True:
             await asyncio.sleep(5)
             async with lock:
+                remaining_seconds = max(0, int(deadline - loop.time()))
                 current = next(iter(in_progress), None)
                 if current is None:
                     print(
-                        f"[progress] completed={completed}/{total}, current=(idle)",
+                        f"[progress] completed={completed}/{total}, current=(idle), remaining={remaining_seconds}s",
                         flush=True,
                     )
                 else:
                     print(
-                        f"[progress] completed={completed}/{total}, current={current}",
+                        f"[progress] completed={completed}/{total}, current={current}, remaining={remaining_seconds}s",
                         flush=True,
                     )
 
-    async def worker(requirement: str) -> None:
-        nonlocal found, missing, completed
-        async with semaphore:
+    async def worker() -> None:
+        nonlocal found, missing, completed, timed_out
+        while True:
             async with lock:
-                in_progress.add(requirement)
-            row = await asyncio.to_thread(resolve_requirement, requirement, finder)
+                if timed_out:
+                    return
+                if loop.time() >= deadline:
+                    timed_out = True
+                    return
+                try:
+                    next_requirement = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                in_progress.add(next_requirement)
+
+            row = await asyncio.to_thread(
+                resolve_requirement, next_requirement, finder
+            )
+
             async with lock:
-                in_progress.discard(requirement)
+                in_progress.discard(next_requirement)
                 completed += 1
                 if row is None:
                     missing += 1
                     print(
-                        f"[done] {completed}/{total} {requirement} -> no match",
+                        f"[done] {completed}/{total} {next_requirement} -> no match",
                         flush=True,
                     )
-                    return
+                    continue
                 connection.execute(
                     """
                     INSERT INTO cache(url, name, version, metadata_text)
@@ -156,26 +180,34 @@ async def process_requirements(
                 )
                 found += 1
                 print(
-                    f"[done] {completed}/{total} {requirement} -> cached",
+                    f"[done] {completed}/{total} {next_requirement} -> cached",
                     flush=True,
                 )
 
     progress_task = asyncio.create_task(report_progress())
+    workers = [asyncio.create_task(worker()) for _ in range(concurrency)]
     try:
-        await asyncio.gather(*(worker(req) for req in requirements))
+        await asyncio.gather(*workers)
         progress_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await progress_task
-        connection.commit()
     finally:
+        for task in workers:
+            if not task.done():
+                task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.gather(*workers)
         if not progress_task.done():
             progress_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await progress_task
+        with contextlib.suppress(Exception):
+            connection.commit()
         finder.session.close()
         connection.close()
 
-    return found, missing
+    skipped = total - completed
+    return found, missing, timed_out, skipped
 
 
 async def async_main() -> None:
@@ -206,23 +238,35 @@ async def async_main() -> None:
         default=20,
         help="Number of concurrent requirement lookups (default: 20).",
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Stop scheduling new lookups after this many seconds (default: 300).",
+    )
     args = parser.parse_args()
 
     requirements = load_requirements(args.packages)
+    random.shuffle(requirements)
     total = len(requirements)
     if total == 0:
         print(f"No package requirements found in {args.packages}")
         return
 
-    found, missing = await process_requirements(
+    found, missing, timed_out, skipped = await process_requirements(
         requirements=requirements,
         cache_db_path=args.http_cache_db,
         output_db_path=args.db,
         concurrency=args.concurrency,
+        timeout_seconds=args.timeout,
     )
-    print(f"Processed {total} requirements")
+    completed = total - skipped
+    print(f"Completed {completed}/{total} requirements")
     print(f"Cached {found} records in {args.db}")
     print(f"No match for {missing} requirements")
+    if timed_out:
+        print(f"Stopped after timeout of {args.timeout}s")
+        print(f"Unprocessed requirements: {skipped}")
 
 
 def main() -> None:
