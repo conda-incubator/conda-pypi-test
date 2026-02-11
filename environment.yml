@@ -2,8 +2,10 @@ name: conda-pypi-test
 channels:
   - conda-forge
 dependencies:
-  - python>=3.10
-  - requests
-  - zstandard
+  - h2  # HTTP/2 for httpx (pip install 'httpx[http2]' if not using conda)
+  - httpx
   - pytest
-  - pip
+  - python>=3.10
+  - requests  # used by generate.py
+  - unearth
+  - zstandard
