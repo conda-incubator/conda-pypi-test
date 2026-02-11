@@ -2,19 +2,22 @@
 """
 Generate conda repodata.json from PyPI packages.
 
-This script fetches package metadata from PyPI and converts it to conda-compatible
-repodata format with packages.whl entries for use with conda-pypi.
+Fetches package metadata from PyPI using async HTTP/2 for fast performance.
+
+Usage:
+    python generate.py [--concurrency N]
 """
 
+import asyncio
 import json
 import bz2
 import zstandard as zstd
-import requests
+import httpx
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 import time
+import argparse
 
 
 # Grayskull mapping URL
@@ -24,7 +27,7 @@ GRAYSKULL_MAPPING_URL = "https://raw.githubusercontent.com/regro/cf-graph-county
 _MAPPING_CACHE: Optional[Dict[str, Dict[str, str]]] = None
 
 
-def load_grayskull_mapping() -> Dict[str, Dict[str, str]]:
+async def load_grayskull_mapping() -> Dict[str, Dict[str, str]]:
     """Load grayskull PyPI to conda mapping from conda-pypi repository."""
     global _MAPPING_CACHE
 
@@ -32,9 +35,13 @@ def load_grayskull_mapping() -> Dict[str, Dict[str, str]]:
         return _MAPPING_CACHE
 
     try:
-        response = requests.get(GRAYSKULL_MAPPING_URL, timeout=30)
-        response.raise_for_status()
-        _MAPPING_CACHE = response.json()
+        async with httpx.AsyncClient(http2=True, timeout=30.0) as client:
+            response = await client.get(
+                GRAYSKULL_MAPPING_URL,
+                headers={"Accept-Encoding": "gzip, deflate, br"},
+            )
+            response.raise_for_status()
+            _MAPPING_CACHE = response.json()
     except Exception:
         print(f"⚠️  Warning: Could not load grayskull mapping")
         print(f"   Using fallback name normalization only")
@@ -56,7 +63,7 @@ def map_package_name(pypi_name: str) -> str:
     Map a PyPI package name to its conda equivalent using grayskull mapping.
     Falls back to normalized name if no mapping exists.
     """
-    mapping = load_grayskull_mapping()
+    mapping = _MAPPING_CACHE or {}
     normalized = normalize_name(pypi_name)
 
     if normalized in mapping:
@@ -146,13 +153,16 @@ def pypi_to_repodata_whl_entry(
     return entry
 
 
-def get_repodata_entry(name: str, version: str, max_retries: int = 3) -> Optional[Dict[str, Any]]:
+async def get_repodata_entry(
+    name: str, version: str, client: httpx.AsyncClient, max_retries: int = 3
+) -> Optional[Dict[str, Any]]:
     """
     Fetch package data from PyPI and convert to repodata entry.
 
     Args:
         name: Package name
         version: Package version
+        client: Async HTTP client
         max_retries: Maximum number of retry attempts
 
     Returns:
@@ -162,7 +172,13 @@ def get_repodata_entry(name: str, version: str, max_retries: int = 3) -> Optiona
 
     for attempt in range(max_retries):
         try:
-            response = requests.get(pypi_endpoint, timeout=30)
+            response = await client.get(
+                pypi_endpoint,
+                headers={
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip, deflate, br",
+                },
+            )
             response.raise_for_status()
             pypi_data = response.json()
 
@@ -170,12 +186,12 @@ def get_repodata_entry(name: str, version: str, max_retries: int = 3) -> Optiona
                 return None
 
             return pypi_to_repodata_whl_entry(pypi_data)
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPStatusError as e:
             if attempt < max_retries - 1:
                 wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
                 print(f"  ⚠️  Error fetching {name} {version} (attempt {attempt + 1}/{max_retries}): {e}")
                 print(f"     Retrying in {wait_time}s...")
-                time.sleep(wait_time)
+                await asyncio.sleep(wait_time)
             else:
                 print(f"  ❌ Error fetching {name} {version} after {max_retries} attempts: {e}")
                 return None
@@ -221,16 +237,16 @@ def parse_packages_file(filepath: Path) -> List[Tuple[str, str]]:
     return packages
 
 
-def generate_repodata(
-    packages: List[Tuple[str, str]], output_dir: Path, max_workers: int = 25
+async def generate_repodata(
+    packages: List[Tuple[str, str]], output_dir: Path, concurrency: int = 100
 ) -> Dict[str, Any]:
     """
-    Generate repodata.json from list of packages.
+    Generate repodata.json from list of packages using async HTTP/2.
 
     Args:
         packages: List of (name, version) tuples
         output_dir: Directory to write repodata.json
-        max_workers: Maximum number of parallel workers
+        concurrency: Maximum number of concurrent requests
 
     Returns:
         Generated repodata dictionary
@@ -241,41 +257,85 @@ def generate_repodata(
     pkg_whls = {}
     failed_packages = []
 
-    print(f"📦 Fetching {len(packages)} packages...\n")
+    print(f"📦 Fetching {len(packages)} packages with async HTTP/2...\n")
 
-    # Run in parallel using ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Map each package to its repodata entry
-        futures = {
-            executor.submit(get_repodata_entry, pkg_tuple[0], pkg_tuple[1]): pkg_tuple
-            for pkg_tuple in packages
-        }
+    # Create async client with HTTP/2
+    try:
+        client = httpx.AsyncClient(
+            http2=True,
+            limits=httpx.Limits(
+                max_connections=concurrency,
+                max_keepalive_connections=50,
+                keepalive_expiry=60.0,
+            ),
+            timeout=httpx.Timeout(30.0, connect=10.0),
+        )
+    except Exception:
+        # Fallback to HTTP/1.1
+        client = httpx.AsyncClient(
+            http2=False,
+            limits=httpx.Limits(
+                max_connections=concurrency * 2,
+                max_keepalive_connections=100,
+                keepalive_expiry=60.0,
+            ),
+            timeout=httpx.Timeout(30.0, connect=10.0),
+        )
 
-        # Collect results as they complete
+    try:
         completed = 0
-        for future in as_completed(futures):
-            pkg_tuple = futures[future]
-            name, version = pkg_tuple
-            completed += 1
-
-            result = future.result()
-            if result:
-                conda_name = result["name"]
-                key = f"{conda_name}-{version}-py3_none_any_0"
-                pkg_whls[key] = result
-
-                # Show mapping if name was changed
-                if conda_name != normalize_name(name):
-                    print(
-                        f"  ✅ [{completed}/{len(packages)}] {name} {version} → {conda_name}"
-                    )
+        start_time = time.perf_counter()
+        
+        # Process in batches to avoid overwhelming the system
+        batch_size = concurrency * 10
+        
+        for i in range(0, len(packages), batch_size):
+            batch = packages[i:i + batch_size]
+            
+            # Create semaphore to limit concurrent requests
+            semaphore = asyncio.Semaphore(concurrency)
+            
+            async def fetch_with_semaphore(pkg_tuple: Tuple[str, str]) -> Tuple[Tuple[str, str], Optional[Dict[str, Any]]]:
+                async with semaphore:
+                    name, version = pkg_tuple
+                    result = await get_repodata_entry(name, version, client)
+                    return (pkg_tuple, result)
+            
+            # Process batch concurrently
+            tasks = [fetch_with_semaphore(pkg_tuple) for pkg_tuple in batch]
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Collect results
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    completed += 1
+                    continue
+                
+                pkg_tuple, entry = result
+                name, version = pkg_tuple
+                completed += 1
+                
+                # Calculate rate
+                elapsed = time.perf_counter() - start_time
+                rate = completed / elapsed if elapsed > 0 else 0
+                
+                if entry:
+                    conda_name = entry["name"]
+                    key = f"{conda_name}-{version}-py3_none_any_0"
+                    pkg_whls[key] = entry
+                    
+                    # Show progress with rate every 100 packages or on completion
+                    if completed % 100 == 0 or completed == len(packages):
+                        print(f"  ✅ [{completed}/{len(packages)}] {name} {version} ({rate:.1f}/s)")
+                    # Show mapping if name was changed (only occasionally)
+                    elif conda_name != normalize_name(name):
+                        print(f"  ✅ [{completed}/{len(packages)}] {name} {version} → {conda_name}")
                 else:
-                    print(f"  ✅ [{completed}/{len(packages)}] {name} {version}")
-            else:
-                failed_packages.append(f"{name}=={version}")
-                print(
-                    f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - no wheel found"
-                )
+                    failed_packages.append(f"{name}=={version}")
+                    print(f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - no wheel found")
+    
+    finally:
+        await client.aclose()
 
     # Check if any packages failed
     if failed_packages:
@@ -405,8 +465,8 @@ def generate_index_html(output_dir: Path) -> None:
     print(f"✨ Generated index → {output_file}")
 
 
-def main():
-    """Main entry point for the script."""
+async def main_async(concurrency: int = 100):
+    """Main entry point for the async script."""
     repo_root = Path(__file__).parent
     packages_file = repo_root / "packages.txt"
     output_dir = repo_root / "noarch"
@@ -416,7 +476,7 @@ def main():
         return 1
 
     # Load mapping early to catch errors before processing
-    load_grayskull_mapping()
+    await load_grayskull_mapping()
 
     print(f"📋 Reading packages.txt...")
     packages = parse_packages_file(packages_file)
@@ -425,14 +485,31 @@ def main():
         print("⚠️  No valid packages found")
         return 1
 
-    print(f"📍 Output directory: {output_dir}\n")
+    print(f"📍 Output directory: {output_dir}")
+    print(f"🚀 Concurrency: {concurrency}\n")
 
-    generate_repodata(packages, output_dir)
+    await generate_repodata(packages, output_dir, concurrency)
     generate_channeldata(repo_root)
     generate_index_html(output_dir)
 
     print("\n✅ Done! Run: python -m http.server 8000\n")
     return 0
+
+
+def main():
+    """CLI entry point."""
+    parser = argparse.ArgumentParser(
+        description="Generate conda repodata from PyPI packages with async HTTP/2"
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=100,
+        help="Number of concurrent requests (default: 100)",
+    )
+    args = parser.parse_args()
+
+    return asyncio.run(main_async(args.concurrency))
 
 
 if __name__ == "__main__":
