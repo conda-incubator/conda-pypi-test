@@ -44,7 +44,7 @@ jobs:
       - name: Run build_cache.py
         shell: micromamba-shell {0}
         run: |
-          python build_cache.py --packages packages.txt --db build_cache.sqlite3 --http-cache-db hishel_http_cache.sqlite3
+          python build_cache.py --packages packages.txt --db build_cache.sqlite3 --http-cache-db hishel_http_cache.sqlite3 --timeout 3600
 
       - name: Compress cache databases
         run: |
