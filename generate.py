@@ -339,11 +339,10 @@ async def generate_repodata(
 
     # Check if any packages failed
     if failed_packages:
-        print(f"\n❌ ERROR: {len(failed_packages)} package(s) missing wheels:\n")
+        print(f"\n⚠️  WARNING: {len(failed_packages)} package(s) missing wheels:\n")
         for pkg in sorted(failed_packages):
             print(f"   - {pkg}")
-        print(f"\nPlease remove these packages from packages.txt and try again.\n")
-        raise SystemExit(1)
+        print(f"\nThese packages were skipped and not included in repodata.json\n")
 
     # Build repodata structure
     repodata_output = {
