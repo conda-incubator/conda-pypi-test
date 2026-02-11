@@ -3,6 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - h2  # HTTP/2 for httpx (pip install 'httpx[http2]' if not using conda)
+  - hishel
   - httpx
   - pytest
   - python>=3.10
