@@ -21,6 +21,10 @@ from unearth.fetchers.sync import PyPIClient
 PYPI_SIMPLE_INDEX_URL = "https://pypi.org/simple/"
 
 
+def report_progress(message: str) -> None:
+    print(message, flush=True)
+
+
 def load_requirements(path: Path) -> list[str]:
     """Read package requirements from a plain text file."""
     requirements: list[str] = []
@@ -121,21 +125,19 @@ async def process_requirements(
     in_progress: set[str] = set()
     timed_out = False
 
-    async def report_progress() -> None:
+    async def progress_reporter() -> None:
         while True:
             await asyncio.sleep(5)
             async with lock:
                 remaining_seconds = max(0, int(deadline - loop.time()))
                 current = next(iter(in_progress), None)
                 if current is None:
-                    print(
+                    report_progress(
                         f"[progress] completed={completed}/{total}, current=(idle), remaining={remaining_seconds}s",
-                        flush=True,
                     )
                 else:
-                    print(
+                    report_progress(
                         f"[progress] completed={completed}/{total}, current={current}, remaining={remaining_seconds}s",
-                        flush=True,
                     )
 
     async def worker() -> None:
@@ -162,10 +164,6 @@ async def process_requirements(
                 completed += 1
                 if row is None:
                     missing += 1
-                    print(
-                        f"[done] {completed}/{total} {next_requirement} -> no match",
-                        flush=True,
-                    )
                     continue
                 connection.execute(
                     """
@@ -179,12 +177,8 @@ async def process_requirements(
                     row,
                 )
                 found += 1
-                print(
-                    f"[done] {completed}/{total} {next_requirement} -> cached",
-                    flush=True,
-                )
 
-    progress_task = asyncio.create_task(report_progress())
+    progress_task = asyncio.create_task(progress_reporter())
     workers = [asyncio.create_task(worker()) for _ in range(concurrency)]
     try:
         await asyncio.gather(*workers)
@@ -250,7 +244,7 @@ async def async_main() -> None:
     random.shuffle(requirements)
     total = len(requirements)
     if total == 0:
-        print(f"No package requirements found in {args.packages}")
+        report_progress(f"No package requirements found in {args.packages}")
         return
 
     found, missing, timed_out, skipped = await process_requirements(
@@ -261,12 +255,12 @@ async def async_main() -> None:
         timeout_seconds=args.timeout,
     )
     completed = total - skipped
-    print(f"Completed {completed}/{total} requirements")
-    print(f"Cached {found} records in {args.db}")
-    print(f"No match for {missing} requirements")
+    report_progress(f"Completed {completed}/{total} requirements")
+    report_progress(f"Cached {found} records in {args.db}")
+    report_progress(f"No match for {missing} requirements")
     if timed_out:
-        print(f"Stopped after timeout of {args.timeout}s")
-        print(f"Unprocessed requirements: {skipped}")
+        report_progress(f"Stopped after timeout of {args.timeout}s")
+        report_progress(f"Unprocessed requirements: {skipped}")
 
 
 def main() -> None:
