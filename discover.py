@@ -58,37 +58,56 @@ def fetch_package_version_and_wheels(
     finder: PackageFinder | None = None,
 ) -> tuple[str, bool] | None:
     """
-    Fetch latest version and wheel availability for one package from PyPI.
-    Uses unearth's PackageFinder to select best matching candidates.
+    Fetch latest stable version with wheel availability for one package from PyPI.
+    Uses unearth's find_best_match to select the best stable version automatically.
     Returns (version, ok) or None.
     """
     del timeout
     if finder is None:
-        finder = PackageFinder(index_urls=[PYPI_SIMPLE_INDEX_URL])
+        finder = PackageFinder(
+            index_urls=[PYPI_SIMPLE_INDEX_URL],
+            only_binary=[name] if pure_only else [],
+        )
+    
     try:
-        packages = finder.find_all_packages(name)
-    except Exception:
-        return None
-    for package in packages:
+        # Use find_best_match to get the latest stable version (no pre-releases)
+        result = finder.find_best_match(name, allow_prereleases=False)
+        
+        if result.best is None:
+            return None
+        
+        package = result.best
+        
+        # Get version
         try:
             pkg_json = package.as_json()
         except Exception:
             pkg_json = {}
-        version = pkg_json.get("version") if isinstance(pkg_json, dict) else None
+        
+        version_str = pkg_json.get("version") if isinstance(pkg_json, dict) else None
+        if not version_str:
+            version_str = getattr(package, "version", None)
+        
+        if not version_str:
+            return None
+        
+        # Check if it's a wheel
         link = pkg_json.get("link") if isinstance(pkg_json, dict) else None
         url = link.get("url") if isinstance(link, dict) else None
         if not url:
             url = getattr(getattr(package, "link", None), "url", "")
+        
         if not isinstance(url, str) or not url.endswith(".whl"):
-            continue
+            return None
+        
+        # Check if it's pure Python wheel if required
         if pure_only and not url.endswith("none-any.whl"):
-            continue
-        if not version:
-            version = getattr(package, "version", None)
-        if not version:
-            continue
-        return (str(version), True)
-    return None
+            return None
+        
+        return (str(version_str), True)
+        
+    except Exception:
+        return None
 
 
 def _init_worker_client() -> None:
@@ -171,6 +190,7 @@ def main() -> None:
         pure_only = not args.any_wheel
         print(f"📋 Reading names from {args.from_names}...")
         print(f"   Filter: {'pure Python wheel only' if pure_only else 'any wheel'}")
+        print(f"   Versions: stable only (no pre-releases)")
         results = discover_from_names_file(
             args.from_names,
             pure_only=pure_only,
