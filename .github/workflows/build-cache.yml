@@ -46,11 +46,23 @@ jobs:
         run: |
           python build_cache.py --packages packages.txt --db build_cache.sqlite3 --http-cache-db hishel_http_cache.sqlite3
 
-      - name: Upload cache databases
+      - name: Compress cache databases
+        run: |
+          files=()
+          for f in build_cache.sqlite3 hishel_http_cache.sqlite3; do
+            if [ -f "$f" ]; then
+              files+=("$f")
+            fi
+          done
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No sqlite cache files found; skipping compression."
+            exit 0
+          fi
+          tar -I 'zstd -T0' -cf sqlite-caches.tar.zst "${files[@]}"
+
+      - name: Upload compressed cache artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sqlite-caches
-          path: |
-            build_cache.sqlite3
-            hishel_http_cache.sqlite3
+          name: sqlite-caches-zstd
+          path: sqlite-caches.tar.zst
           if-no-files-found: warn
