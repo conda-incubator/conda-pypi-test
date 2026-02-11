@@ -49,3 +49,7 @@ noarch/repodata.json.bz2
 noarch/repodata.json.zst
 noarch/index.html
 channeldata.json
+
+# Data
+*packages.txt
+*.sqlite3*
