@@ -58,8 +58,9 @@ def fetch_package_version_and_wheels(
     finder: PackageFinder | None = None,
 ) -> tuple[str, bool] | None:
     """
-    Fetch latest stable version with wheel availability for one package from PyPI.
+    Fetch latest version with wheel availability for one package from PyPI.
     Uses unearth's find_best_match to select the best stable version automatically.
+    If no stable version is found, falls back to the latest pre-release version.
     Returns (version, ok) or None.
     """
     del timeout
@@ -70,11 +71,15 @@ def fetch_package_version_and_wheels(
         )
     
     try:
-        # Use find_best_match to get the latest stable version (no pre-releases)
+        # Try to get the latest stable version first (no pre-releases)
         result = finder.find_best_match(name, allow_prereleases=False)
         
+        # If no stable version found, try with pre-releases
         if result.best is None:
-            return None
+            result = finder.find_best_match(name, allow_prereleases=True)
+            
+            if result.best is None:
+                return None
         
         package = result.best
         
@@ -190,7 +195,7 @@ def main() -> None:
         pure_only = not args.any_wheel
         print(f"📋 Reading names from {args.from_names}...")
         print(f"   Filter: {'pure Python wheel only' if pure_only else 'any wheel'}")
-        print(f"   Versions: stable only (no pre-releases)")
+        print(f"   Versions: stable preferred (pre-releases used if no stable version)t ")
         results = discover_from_names_file(
             args.from_names,
             pure_only=pure_only,
