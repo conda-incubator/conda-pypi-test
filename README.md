@@ -13,7 +13,7 @@ conda env create --file environment.yml
 conda activate conda-pypi-test
 ```
 
-## Quick Start
+## Generating the Test Channel
 
 ### Discover packages from PyPI
 
@@ -39,6 +39,32 @@ python generate.py
 ```
 
 This creates `noarch/repodata.json`, `.bz2`, and `.zst`. Use the channel locally with `conda install -c . package-name`.
+
+## Quickstart for Using the Channel with conda
+
+### Install the conda-pypi plugin
+
+This will install the conda-pypi plugin and its dependencies:
+
+```bash
+conda install -n base conda-pypi
+```
+
+### Configure the solver
+
+The rattler solver is required for wheel installation:
+
+```bash
+conda config --set solver rattler
+```
+
+### Add the conda-pypi-test channel to your `.condarc`
+
+This temporary test channel indexes approximately 500K pure Python wheels, latest version only:
+
+```bash
+conda config --add channels https://github.com/conda-incubator/conda-pypi-test/releases/download/noarch
+```
 
 ## GitHub Releases
 
