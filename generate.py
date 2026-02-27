@@ -120,6 +120,7 @@ def pypi_to_repodata_whl_entry(
         try:
             req = Requirement(dep)
         except InvalidRequirement:
+            # Not logging failures here because there may be too many with 500K+ packages
             continue
 
         conda_dep = map_package_name(req.name) + str(req.specifier)
