@@ -4,8 +4,9 @@ channels:
 dependencies:
   - h2  # HTTP/2 for httpx (pip install 'httpx[http2]' if not using conda)
   - httpx
+  - packaging
   - pytest
   - python>=3.10
   - requests  # used by generate.py
   - unearth
-  - zstandard
+  - backports.zstd

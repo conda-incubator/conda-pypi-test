@@ -8,26 +8,29 @@ Usage:
     python generate.py [--concurrency N]
 """
 
+import argparse
 import asyncio
 import json
-import bz2
-import zstandard as zstd
+try:
+    from compression.zstd import compress as zstd_compress  # Python 3.14+
+except ImportError:
+    from backports.zstd import compress as zstd_compress  # type: ignore[no-redef]
 import httpx
-from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
 import re
 import time
-import argparse
+from packaging.requirements import Requirement, InvalidRequirement
+from pathlib import Path
+from typing import Any
 
 
 # Grayskull mapping URL
 GRAYSKULL_MAPPING_URL = "https://raw.githubusercontent.com/regro/cf-graph-countyfair/master/mappings/pypi/grayskull_pypi_mapping.json"
 
 # Global cache for the mapping data
-_MAPPING_CACHE: Optional[Dict[str, Dict[str, str]]] = None
+_MAPPING_CACHE: dict[str, dict[str, str]] | None = None
 
 
-async def load_grayskull_mapping() -> Dict[str, Dict[str, str]]:
+async def load_grayskull_mapping() -> dict[str, dict[str, str]]:
     """Load grayskull PyPI to conda mapping from conda-pypi repository."""
     global _MAPPING_CACHE
 
@@ -72,23 +75,9 @@ def map_package_name(pypi_name: str) -> str:
     return normalized
 
 
-def map_dependency_name(pypi_dep: str) -> str:
-    """
-    Map a PyPI dependency string to use conda package names.
-    Handles version specifiers like "package>=1.0".
-    """
-    match = re.match(r"^([a-zA-Z0-9._-]+)", pypi_dep)
-    if not match:
-        return pypi_dep
-
-    pypi_name = match.group(1)
-    conda_name = map_package_name(pypi_name)
-    return pypi_dep.replace(pypi_name, conda_name, 1)
-
-
 def pypi_to_repodata_whl_entry(
-    pypi_data: Dict[str, Any], url_index: int = 0
-) -> Optional[Dict[str, Any]]:
+    pypi_data: dict[str, Any], url_index: int = 0
+) -> dict[str, Any] | None:
     """
     Convert PyPI JSON endpoint data to a repodata.json packages.whl entry.
 
@@ -99,13 +88,20 @@ def pypi_to_repodata_whl_entry(
     Returns:
         Dictionary representing the entry for packages.whl, or None if wheel not found
     """
-    # Find the wheel URL (bdist_wheel package type)
+    # Find a pure Python wheel (platform tag must be "none-any").
+    # Wheels with compiled native code use platform-specific tags such as
+    # "cp311-cp311-manylinux_2_17_x86_64" and must be excluded — conda
+    # installs them differently via the native package manager.
     wheel_url = None
 
     for url_entry in pypi_data.get("urls", []):
-        if url_entry.get("packagetype") == "bdist_wheel":
-            wheel_url = url_entry
-            break
+        if url_entry.get("packagetype") != "bdist_wheel":
+            continue
+        filename = url_entry.get("filename", "")
+        if not filename.endswith("-none-any.whl"):
+            continue
+        wheel_url = url_entry
+        break
 
     if not wheel_url:
         return None
@@ -117,14 +113,27 @@ def pypi_to_repodata_whl_entry(
     conda_name = map_package_name(pypi_name)
     version = pypi_info.get("version")
 
-    # Build dependency list with name mapping
+    # Build dependency list and extras dict with name mapping
     depends_list = []
+    extras_dict: dict[str, list[str]] = {}
     for dep in pypi_info.get("requires_dist") or []:
-        if "extra" not in dep:
-            # Remove environment markers (after semicolon)
-            dep_clean = dep.split(";")[0].strip()
-            # Map the dependency name to conda equivalent
-            conda_dep = map_dependency_name(dep_clean)
+        try:
+            req = Requirement(dep)
+        except InvalidRequirement:
+            # Not logging failures here because there may be too many with 500K+ packages
+            continue
+
+        conda_dep = map_package_name(req.name) + str(req.specifier)
+
+        if req.marker:
+            extra_match = re.search(
+                r'extra\s*==\s*["\']([^"\']+)["\']', str(req.marker)
+            )
+            if extra_match:
+                extras_dict.setdefault(extra_match.group(1), []).append(conda_dep)
+            else:
+                depends_list.append(conda_dep)
+        else:
             depends_list.append(conda_dep)
 
     # Add Python version requirement
@@ -144,6 +153,7 @@ def pypi_to_repodata_whl_entry(
         "build": "py3_none_any_0",
         "build_number": 0,
         "depends": depends_list,
+        "extras": extras_dict,
         "sha256": wheel_url.get("digests", {}).get("sha256", ""),
         "size": wheel_url.get("size", 0),
         "subdir": "noarch",
@@ -155,7 +165,7 @@ def pypi_to_repodata_whl_entry(
 
 async def get_repodata_entry(
     name: str, version: str, client: httpx.AsyncClient, max_retries: int = 3
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Fetch package data from PyPI and convert to repodata entry.
 
@@ -188,21 +198,25 @@ async def get_repodata_entry(
             return pypi_to_repodata_whl_entry(pypi_data)
         except httpx.HTTPStatusError as e:
             if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                print(f"  ⚠️  Error fetching {name} {version} (attempt {attempt + 1}/{max_retries}): {e}")
+                wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
+                print(
+                    f"  ⚠️  Error fetching {name} {version} (attempt {attempt + 1}/{max_retries}): {e}"
+                )
                 print(f"     Retrying in {wait_time}s...")
                 await asyncio.sleep(wait_time)
             else:
-                print(f"  ❌ Error fetching {name} {version} after {max_retries} attempts: {e}")
+                print(
+                    f"  ❌ Error fetching {name} {version} after {max_retries} attempts: {e}"
+                )
                 return None
         except Exception as e:
             print(f"  ❌ Error processing {name} {version}: {e}")
             return None
-    
+
     return None
 
 
-def parse_packages_file(filepath: Path) -> List[Tuple[str, str]]:
+def parse_packages_file(filepath: Path) -> list[tuple[str, str]]:
     """
     Parse packages.txt file into list of (name, version) tuples.
 
@@ -238,8 +252,8 @@ def parse_packages_file(filepath: Path) -> List[Tuple[str, str]]:
 
 
 async def generate_repodata(
-    packages: List[Tuple[str, str]], output_dir: Path, concurrency: int = 100
-) -> Dict[str, Any]:
+    packages: list[tuple[str, str]], output_dir: Path, concurrency: int = 100
+) -> dict[str, Any]:
     """
     Generate repodata.json from list of packages using async HTTP/2.
 
@@ -285,55 +299,63 @@ async def generate_repodata(
     try:
         completed = 0
         start_time = time.perf_counter()
-        
+
         # Process in batches to avoid overwhelming the system
         batch_size = concurrency * 10
-        
+
         for i in range(0, len(packages), batch_size):
-            batch = packages[i:i + batch_size]
-            
+            batch = packages[i : i + batch_size]
+
             # Create semaphore to limit concurrent requests
             semaphore = asyncio.Semaphore(concurrency)
-            
-            async def fetch_with_semaphore(pkg_tuple: Tuple[str, str]) -> Tuple[Tuple[str, str], Optional[Dict[str, Any]]]:
+
+            async def fetch_with_semaphore(
+                pkg_tuple: tuple[str, str],
+            ) -> tuple[tuple[str, str], dict[str, Any] | None]:
                 async with semaphore:
                     name, version = pkg_tuple
                     result = await get_repodata_entry(name, version, client)
                     return (pkg_tuple, result)
-            
+
             # Process batch concurrently
             tasks = [fetch_with_semaphore(pkg_tuple) for pkg_tuple in batch]
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             # Collect results
             for result in batch_results:
                 if isinstance(result, Exception):
                     completed += 1
                     continue
-                
+
                 pkg_tuple, entry = result
                 name, version = pkg_tuple
                 completed += 1
-                
+
                 # Calculate rate
                 elapsed = time.perf_counter() - start_time
                 rate = completed / elapsed if elapsed > 0 else 0
-                
+
                 if entry:
                     conda_name = entry["name"]
                     key = f"{conda_name}-{version}-py3_none_any_0"
                     pkg_whls[key] = entry
-                    
+
                     # Show progress with rate every 100 packages or on completion
                     if completed % 100 == 0 or completed == len(packages):
-                        print(f"  ✅ [{completed}/{len(packages)}] {name} {version} ({rate:.1f}/s)")
+                        print(
+                            f"  ✅ [{completed}/{len(packages)}] {name} {version} ({rate:.1f}/s)"
+                        )
                     # Show mapping if name was changed (only occasionally)
                     elif conda_name != normalize_name(name):
-                        print(f"  ✅ [{completed}/{len(packages)}] {name} {version} → {conda_name}")
+                        print(
+                            f"  ✅ [{completed}/{len(packages)}] {name} {version} → {conda_name}"
+                        )
                 else:
                     failed_packages.append(f"{name}=={version}")
-                    print(f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - no wheel found")
-    
+                    print(
+                        f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - no wheel found"
+                    )
+
     finally:
         await client.aclose()
 
@@ -368,17 +390,10 @@ async def generate_repodata(
         f.write(json_data)
     print(f"\n✨ Generated {len(pkg_whls)} packages → {output_file}")
 
-    # Write bz2 compressed version
-    bz2_file = output_dir / "repodata.json.bz2"
-    with open(bz2_file, "wb") as f:
-        f.write(bz2.compress(json_bytes))
-    print(f"✨ Compressed (bz2) → {bz2_file}")
-
     # Write zstd compressed version
     zst_file = output_dir / "repodata.json.zst"
-    cctx = zstd.ZstdCompressor(level=19)
     with open(zst_file, "wb") as f:
-        f.write(cctx.compress(json_bytes))
+        f.write(zstd_compress(json_bytes, level=19))
     print(f"✨ Compressed (zstd) → {zst_file}")
 
     return repodata_output
@@ -422,7 +437,7 @@ def generate_index_html(output_dir: Path) -> None:
 
     # Get file sizes
     files_info = []
-    for filename in ["repodata.json", "repodata.json.bz2", "repodata.json.zst"]:
+    for filename in ["repodata.json", "repodata.json.zst"]:
         filepath = output_dir / filename
         if filepath.exists():
             size = filepath.stat().st_size
@@ -464,10 +479,11 @@ def generate_index_html(output_dir: Path) -> None:
     print(f"✨ Generated index → {output_file}")
 
 
-async def main_async(concurrency: int = 100):
+async def main_async(concurrency: int = 100, packages_file: Path | None = None):
     """Main entry point for the async script."""
     repo_root = Path(__file__).parent
-    packages_file = repo_root / "packages.txt"
+    if packages_file is None:
+        packages_file = repo_root / "packages.txt"
     output_dir = repo_root / "noarch"
 
     if not packages_file.exists():
@@ -506,9 +522,16 @@ def main():
         default=100,
         help="Number of concurrent requests (default: 100)",
     )
+    parser.add_argument(
+        "--packages-file",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Path to packages file (default: packages.txt in repo root)",
+    )
     args = parser.parse_args()
 
-    return asyncio.run(main_async(args.concurrency))
+    return asyncio.run(main_async(args.concurrency, args.packages_file))
 
 
 if __name__ == "__main__":
