@@ -17,17 +17,17 @@ import re
 import time
 from packaging.requirements import Requirement, InvalidRequirement
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Any
 
 
 # Grayskull mapping URL
 GRAYSKULL_MAPPING_URL = "https://raw.githubusercontent.com/regro/cf-graph-countyfair/master/mappings/pypi/grayskull_pypi_mapping.json"
 
 # Global cache for the mapping data
-_MAPPING_CACHE: Optional[Dict[str, Dict[str, str]]] = None
+_MAPPING_CACHE: dict[str, dict[str, str]] | None = None
 
 
-async def load_grayskull_mapping() -> Dict[str, Dict[str, str]]:
+async def load_grayskull_mapping() -> dict[str, dict[str, str]]:
     """Load grayskull PyPI to conda mapping from conda-pypi repository."""
     global _MAPPING_CACHE
 
@@ -73,8 +73,8 @@ def map_package_name(pypi_name: str) -> str:
 
 
 def pypi_to_repodata_whl_entry(
-    pypi_data: Dict[str, Any], url_index: int = 0
-) -> Optional[Dict[str, Any]]:
+    pypi_data: dict[str, Any], url_index: int = 0
+) -> dict[str, Any] | None:
     """
     Convert PyPI JSON endpoint data to a repodata.json packages.whl entry.
 
@@ -112,7 +112,7 @@ def pypi_to_repodata_whl_entry(
 
     # Build dependency list and extras dict with name mapping
     depends_list = []
-    extras_dict: Dict[str, List[str]] = {}
+    extras_dict: dict[str, list[str]] = {}
     for dep in pypi_info.get("requires_dist") or []:
         try:
             req = Requirement(dep)
@@ -161,7 +161,7 @@ def pypi_to_repodata_whl_entry(
 
 async def get_repodata_entry(
     name: str, version: str, client: httpx.AsyncClient, max_retries: int = 3
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Fetch package data from PyPI and convert to repodata entry.
 
@@ -212,7 +212,7 @@ async def get_repodata_entry(
     return None
 
 
-def parse_packages_file(filepath: Path) -> List[Tuple[str, str]]:
+def parse_packages_file(filepath: Path) -> list[tuple[str, str]]:
     """
     Parse packages.txt file into list of (name, version) tuples.
 
@@ -248,8 +248,8 @@ def parse_packages_file(filepath: Path) -> List[Tuple[str, str]]:
 
 
 async def generate_repodata(
-    packages: List[Tuple[str, str]], output_dir: Path, concurrency: int = 100
-) -> Dict[str, Any]:
+    packages: list[tuple[str, str]], output_dir: Path, concurrency: int = 100
+) -> dict[str, Any]:
     """
     Generate repodata.json from list of packages using async HTTP/2.
 
@@ -306,8 +306,8 @@ async def generate_repodata(
             semaphore = asyncio.Semaphore(concurrency)
 
             async def fetch_with_semaphore(
-                pkg_tuple: Tuple[str, str],
-            ) -> Tuple[Tuple[str, str], Optional[Dict[str, Any]]]:
+                pkg_tuple: tuple[str, str],
+            ) -> tuple[tuple[str, str], dict[str, Any] | None]:
                 async with semaphore:
                     name, version = pkg_tuple
                     result = await get_repodata_entry(name, version, client)
@@ -476,7 +476,7 @@ def generate_index_html(output_dir: Path) -> None:
     print(f"✨ Generated index → {output_file}")
 
 
-async def main_async(concurrency: int = 100, packages_file: Optional[Path] = None):
+async def main_async(concurrency: int = 100, packages_file: Path | None = None):
     """Main entry point for the async script."""
     repo_root = Path(__file__).parent
     if packages_file is None:
