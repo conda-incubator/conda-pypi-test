@@ -131,19 +131,37 @@ def _fetch_one(name: str, pure_only: bool, timeout: int) -> tuple[str, bool] | N
     )
 
 
+def load_blocklist(blocklist_path: Path) -> set[str]:
+    """Load a blocklist file and return a set of normalized package names."""
+    blocked: set[str] = set()
+    if not blocklist_path.exists():
+        return blocked
+    with open(blocklist_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            blocked.add(normalize_package_name(line))
+    return blocked
+
+
 def discover_from_names_file(
     names_path: Path,
     pure_only: bool = True,
     workers: int = 50,
     delay: float = 0.0,
     timeout: int = 30,
+    blocklist: set[str] | None = None,
 ) -> list[tuple[str, str]]:
     """Read names from file; for each, fetch PyPI metadata and return (name, version) for packages with wheels."""
+    blocked = blocklist or set()
     names = []
     with open(names_path) as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
+                continue
+            if normalize_package_name(line) in blocked:
                 continue
             names.append(line)
     if not names:
@@ -186,6 +204,7 @@ def main() -> None:
     parser.add_argument("--any-wheel", action="store_true", help="With --from-names: keep any wheel (default: pure Python only)")
     parser.add_argument("--workers", type=int, default=50, help="With --from-names: concurrent requests (default 50; reduce if rate limited)")
     parser.add_argument("--delay", type=float, default=0.0, help="With --from-names: extra delay per completion in seconds (default 0)")
+    parser.add_argument("--blocklist", type=Path, default=Path("blocklist.txt"), metavar="FILE", help="File of package names to exclude (default: blocklist.txt)")
     args = parser.parse_args()
 
     if args.from_names is not None:
@@ -193,14 +212,18 @@ def main() -> None:
             print(f"❌ File not found: {args.from_names}")
             sys.exit(1)
         pure_only = not args.any_wheel
+        blocked = load_blocklist(args.blocklist)
         print(f"📋 Reading names from {args.from_names}...")
         print(f"   Filter: {'pure Python wheel only' if pure_only else 'any wheel'}")
-        print(f"   Versions: stable preferred (pre-releases used if no stable version)t ")
+        if blocked:
+            print(f"   Blocklist: {len(blocked)} package(s) excluded ({args.blocklist})")
+        print(f"   Versions: stable preferred (pre-releases used if no stable version) ")
         results = discover_from_names_file(
             args.from_names,
             pure_only=pure_only,
             workers=args.workers,
             delay=args.delay,
+            blocklist=blocked,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         lines = ["# Format: package-name==version", ""] + [f"{n}=={v}" for n, v in sorted(results)]

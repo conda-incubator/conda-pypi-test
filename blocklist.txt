@@ -1,0 +1,6 @@
+# Packages excluded from the conda-pypi channel.
+# One package name per line (lowercase, hyphen-normalized).
+# Reason to exclude packages include:
+# 1. Wheels bundle compiled native libraries but are marked as pure-Python noarch
+
+lerc
