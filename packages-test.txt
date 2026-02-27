@@ -1,0 +1,8 @@
+# Small package set used by PR checks to validate the full generate pipeline.
+# Intentionally includes packages with extras so extras parsing is exercised.
+
+httpx==0.28.1
+requests==2.32.3
+fastapi==0.115.6
+pydantic==2.10.6
+python-dotenv==1.0.1

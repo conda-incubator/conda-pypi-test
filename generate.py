@@ -483,10 +483,11 @@ def generate_index_html(output_dir: Path) -> None:
     print(f"✨ Generated index → {output_file}")
 
 
-async def main_async(concurrency: int = 100):
+async def main_async(concurrency: int = 100, packages_file: Optional[Path] = None):
     """Main entry point for the async script."""
     repo_root = Path(__file__).parent
-    packages_file = repo_root / "packages.txt"
+    if packages_file is None:
+        packages_file = repo_root / "packages.txt"
     output_dir = repo_root / "noarch"
 
     if not packages_file.exists():
@@ -525,9 +526,16 @@ def main():
         default=100,
         help="Number of concurrent requests (default: 100)",
     )
+    parser.add_argument(
+        "--packages-file",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Path to packages file (default: packages.txt in repo root)",
+    )
     args = parser.parse_args()
 
-    return asyncio.run(main_async(args.concurrency))
+    return asyncio.run(main_async(args.concurrency, args.packages_file))
 
 
 if __name__ == "__main__":
