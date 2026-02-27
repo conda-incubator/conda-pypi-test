@@ -50,13 +50,6 @@ jobs:
           path: noarch/repodata.json
           if-no-files-found: error
       
-      - name: Upload repodata.json.bz2
-        uses: actions/upload-artifact@v4
-        with:
-          name: repodata.json.bz2
-          path: noarch/repodata.json.bz2
-          if-no-files-found: error
-      
       - name: Upload repodata.json.zst
         uses: actions/upload-artifact@v4
         with:
@@ -75,12 +68,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: repodata.json
-          path: artifacts
-      
-      - name: Download repodata.json.bz2
-        uses: actions/download-artifact@v4
-        with:
-          name: repodata.json.bz2
           path: artifacts
       
       - name: Download repodata.json.zst
@@ -105,8 +92,7 @@ jobs:
             
             ## Files
             - `repodata.json` - Uncompressed metadata
-            - `repodata.json.bz2` - Bzip2 compressed (recommended)
-            - `repodata.json.zst` - Zstandard compressed (best compression)
+            - `repodata.json.zst` - Zstandard compressed
             
             ## Usage
             ```bash
@@ -114,7 +100,6 @@ jobs:
             ```
           files: |
             artifacts/repodata.json
-            artifacts/repodata.json.bz2
             artifacts/repodata.json.zst
           fail_on_unmatched_files: true
           draft: false

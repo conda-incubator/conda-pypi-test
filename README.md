@@ -38,7 +38,7 @@ Edit `packages.txt` (format: `name==version` per line), then:
 python generate.py
 ```
 
-This creates `noarch/repodata.json`, `.bz2`, and `.zst`. Use the channel locally with `conda install -c . package-name`.
+This creates `noarch/repodata.json` and `.zst`. Use the channel locally with `conda install -c . package-name`.
 
 ## Quickstart for Using the Channel with conda
 

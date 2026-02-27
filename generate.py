@@ -11,7 +11,6 @@ Usage:
 import argparse
 import asyncio
 import json
-import bz2
 import zstandard as zstd
 import httpx
 import re
@@ -387,12 +386,6 @@ async def generate_repodata(
         f.write(json_data)
     print(f"\n✨ Generated {len(pkg_whls)} packages → {output_file}")
 
-    # Write bz2 compressed version
-    bz2_file = output_dir / "repodata.json.bz2"
-    with open(bz2_file, "wb") as f:
-        f.write(bz2.compress(json_bytes))
-    print(f"✨ Compressed (bz2) → {bz2_file}")
-
     # Write zstd compressed version
     zst_file = output_dir / "repodata.json.zst"
     cctx = zstd.ZstdCompressor(level=19)
@@ -441,7 +434,7 @@ def generate_index_html(output_dir: Path) -> None:
 
     # Get file sizes
     files_info = []
-    for filename in ["repodata.json", "repodata.json.bz2", "repodata.json.zst"]:
+    for filename in ["repodata.json", "repodata.json.zst"]:
         filepath = output_dir / filename
         if filepath.exists():
             size = filepath.stat().st_size

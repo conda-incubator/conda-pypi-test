@@ -194,7 +194,6 @@ def test_generated_files_exist():
 
     expected_files = [
         repo_root / "noarch" / "repodata.json",
-        repo_root / "noarch" / "repodata.json.bz2",
         repo_root / "noarch" / "repodata.json.zst",
         repo_root / "noarch" / "index.html",
         repo_root / "channeldata.json",
@@ -345,21 +344,14 @@ def test_compressed_files_valid():
     """Test that compressed files are valid and non-empty."""
     repo_root = Path(__file__).parent
 
-    # Check bz2 file
-    bz2_file = repo_root / "noarch" / "repodata.json.bz2"
-    assert bz2_file.exists()
-    assert bz2_file.stat().st_size > 0
-
     # Check zst file
     zst_file = repo_root / "noarch" / "repodata.json.zst"
     assert zst_file.exists()
     assert zst_file.stat().st_size > 0
 
-    # Compressed files should be smaller than uncompressed
+    # Compressed file should be smaller than uncompressed
     json_file = repo_root / "noarch" / "repodata.json"
     json_size = json_file.stat().st_size
-    bz2_size = bz2_file.stat().st_size
     zst_size = zst_file.stat().st_size
 
-    assert bz2_size < json_size, "bz2 file should be smaller than json"
     assert zst_size < json_size, "zst file should be smaller than json"
