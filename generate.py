@@ -8,16 +8,17 @@ Usage:
     python generate.py [--concurrency N]
 """
 
+import argparse
 import asyncio
 import json
 import bz2
 import zstandard as zstd
 import httpx
-from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
 import re
 import time
-import argparse
+from packaging.requirements import Requirement, InvalidRequirement
+from pathlib import Path
+from typing import Dict, Any, Optional, List, Tuple
 
 
 # Grayskull mapping URL
@@ -72,20 +73,6 @@ def map_package_name(pypi_name: str) -> str:
     return normalized
 
 
-def map_dependency_name(pypi_dep: str) -> str:
-    """
-    Map a PyPI dependency string to use conda package names.
-    Handles version specifiers like "package>=1.0".
-    """
-    match = re.match(r"^([a-zA-Z0-9._-]+)", pypi_dep)
-    if not match:
-        return pypi_dep
-
-    pypi_name = match.group(1)
-    conda_name = map_package_name(pypi_name)
-    return pypi_dep.replace(pypi_name, conda_name, 1)
-
-
 def pypi_to_repodata_whl_entry(
     pypi_data: Dict[str, Any], url_index: int = 0
 ) -> Optional[Dict[str, Any]]:
@@ -99,13 +86,20 @@ def pypi_to_repodata_whl_entry(
     Returns:
         Dictionary representing the entry for packages.whl, or None if wheel not found
     """
-    # Find the wheel URL (bdist_wheel package type)
+    # Find a pure Python wheel (platform tag must be "none-any").
+    # Wheels with compiled native code use platform-specific tags such as
+    # "cp311-cp311-manylinux_2_17_x86_64" and must be excluded — conda
+    # installs them differently via the native package manager.
     wheel_url = None
 
     for url_entry in pypi_data.get("urls", []):
-        if url_entry.get("packagetype") == "bdist_wheel":
-            wheel_url = url_entry
-            break
+        if url_entry.get("packagetype") != "bdist_wheel":
+            continue
+        filename = url_entry.get("filename", "")
+        if not filename.endswith("-none-any.whl"):
+            continue
+        wheel_url = url_entry
+        break
 
     if not wheel_url:
         return None
@@ -117,14 +111,26 @@ def pypi_to_repodata_whl_entry(
     conda_name = map_package_name(pypi_name)
     version = pypi_info.get("version")
 
-    # Build dependency list with name mapping
+    # Build dependency list and extras dict with name mapping
     depends_list = []
+    extras_dict: Dict[str, List[str]] = {}
     for dep in pypi_info.get("requires_dist") or []:
-        if "extra" not in dep:
-            # Remove environment markers (after semicolon)
-            dep_clean = dep.split(";")[0].strip()
-            # Map the dependency name to conda equivalent
-            conda_dep = map_dependency_name(dep_clean)
+        try:
+            req = Requirement(dep)
+        except InvalidRequirement:
+            continue
+
+        conda_dep = map_package_name(req.name) + str(req.specifier)
+
+        if req.marker:
+            extra_match = re.search(
+                r'extra\s*==\s*["\']([^"\']+)["\']', str(req.marker)
+            )
+            if extra_match:
+                extras_dict.setdefault(extra_match.group(1), []).append(conda_dep)
+            else:
+                depends_list.append(conda_dep)
+        else:
             depends_list.append(conda_dep)
 
     # Add Python version requirement
@@ -144,6 +150,7 @@ def pypi_to_repodata_whl_entry(
         "build": "py3_none_any_0",
         "build_number": 0,
         "depends": depends_list,
+        "extras": extras_dict,
         "sha256": wheel_url.get("digests", {}).get("sha256", ""),
         "size": wheel_url.get("size", 0),
         "subdir": "noarch",
@@ -188,17 +195,21 @@ async def get_repodata_entry(
             return pypi_to_repodata_whl_entry(pypi_data)
         except httpx.HTTPStatusError as e:
             if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                print(f"  ⚠️  Error fetching {name} {version} (attempt {attempt + 1}/{max_retries}): {e}")
+                wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
+                print(
+                    f"  ⚠️  Error fetching {name} {version} (attempt {attempt + 1}/{max_retries}): {e}"
+                )
                 print(f"     Retrying in {wait_time}s...")
                 await asyncio.sleep(wait_time)
             else:
-                print(f"  ❌ Error fetching {name} {version} after {max_retries} attempts: {e}")
+                print(
+                    f"  ❌ Error fetching {name} {version} after {max_retries} attempts: {e}"
+                )
                 return None
         except Exception as e:
             print(f"  ❌ Error processing {name} {version}: {e}")
             return None
-    
+
     return None
 
 
@@ -285,55 +296,63 @@ async def generate_repodata(
     try:
         completed = 0
         start_time = time.perf_counter()
-        
+
         # Process in batches to avoid overwhelming the system
         batch_size = concurrency * 10
-        
+
         for i in range(0, len(packages), batch_size):
-            batch = packages[i:i + batch_size]
-            
+            batch = packages[i : i + batch_size]
+
             # Create semaphore to limit concurrent requests
             semaphore = asyncio.Semaphore(concurrency)
-            
-            async def fetch_with_semaphore(pkg_tuple: Tuple[str, str]) -> Tuple[Tuple[str, str], Optional[Dict[str, Any]]]:
+
+            async def fetch_with_semaphore(
+                pkg_tuple: Tuple[str, str],
+            ) -> Tuple[Tuple[str, str], Optional[Dict[str, Any]]]:
                 async with semaphore:
                     name, version = pkg_tuple
                     result = await get_repodata_entry(name, version, client)
                     return (pkg_tuple, result)
-            
+
             # Process batch concurrently
             tasks = [fetch_with_semaphore(pkg_tuple) for pkg_tuple in batch]
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             # Collect results
             for result in batch_results:
                 if isinstance(result, Exception):
                     completed += 1
                     continue
-                
+
                 pkg_tuple, entry = result
                 name, version = pkg_tuple
                 completed += 1
-                
+
                 # Calculate rate
                 elapsed = time.perf_counter() - start_time
                 rate = completed / elapsed if elapsed > 0 else 0
-                
+
                 if entry:
                     conda_name = entry["name"]
                     key = f"{conda_name}-{version}-py3_none_any_0"
                     pkg_whls[key] = entry
-                    
+
                     # Show progress with rate every 100 packages or on completion
                     if completed % 100 == 0 or completed == len(packages):
-                        print(f"  ✅ [{completed}/{len(packages)}] {name} {version} ({rate:.1f}/s)")
+                        print(
+                            f"  ✅ [{completed}/{len(packages)}] {name} {version} ({rate:.1f}/s)"
+                        )
                     # Show mapping if name was changed (only occasionally)
                     elif conda_name != normalize_name(name):
-                        print(f"  ✅ [{completed}/{len(packages)}] {name} {version} → {conda_name}")
+                        print(
+                            f"  ✅ [{completed}/{len(packages)}] {name} {version} → {conda_name}"
+                        )
                 else:
                     failed_packages.append(f"{name}=={version}")
-                    print(f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - no wheel found")
-    
+                    print(
+                        f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - no wheel found"
+                    )
+
     finally:
         await client.aclose()
 
