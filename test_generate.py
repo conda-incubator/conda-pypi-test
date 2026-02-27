@@ -49,6 +49,87 @@ def test_pypi_to_repodata_whl_entry():
     assert len(entry["depends"]) == 5  # 4 deps + python requirement
 
 
+def test_pypi_to_repodata_whl_entry_with_extras():
+    """Test that extras markers are separated from regular deps and stored in extras dict."""
+    pypi_data = {
+        "info": {
+            "name": "httpx",
+            "version": "0.28.1",
+            "requires_dist": [
+                "certifi",
+                "httpcore ==1.*",
+                "anyio; extra == 'asyncio'",
+                "h2 >=3,<5; extra == 'http2'",
+                "brotli; extra == 'brotli'",
+                # dep with both an extra marker and a version specifier
+                "socksio ==1.*; extra == 'socks'",
+            ],
+            "requires_python": ">=3.8",
+        },
+        "urls": [
+            {
+                "packagetype": "bdist_wheel",
+                "filename": "httpx-0.28.1-py3-none-any.whl",
+                "url": "https://files.pythonhosted.org/packages/.../httpx-0.28.1-py3-none-any.whl",
+                "size": 109051,
+                "digests": {"sha256": "def456"},
+            }
+        ],
+    }
+
+    entry = pypi_to_repodata_whl_entry(pypi_data)
+
+    assert entry is not None
+    assert "extras" in entry
+
+    extras = entry["extras"]
+    # Each declared extra should appear as a key
+    assert "asyncio" in extras
+    assert "http2" in extras
+    assert "brotli" in extras
+    assert "socks" in extras
+
+    # Each extra's dep list should contain the right package name
+    assert any("anyio" in dep for dep in extras["asyncio"])
+    assert any("h2" in dep for dep in extras["http2"])
+    assert any("brotli" in dep for dep in extras["brotli"])
+    assert any("socksio" in dep for dep in extras["socks"])
+
+    # Non-extra deps must stay in depends, not bleed into extras
+    assert any("certifi" in dep for dep in entry["depends"])
+    assert any("httpcore" in dep for dep in entry["depends"])
+    # Extra deps must not appear in depends
+    assert not any("anyio" in dep for dep in entry["depends"])
+    assert not any("h2" in dep for dep in entry["depends"])
+
+
+def test_pypi_to_repodata_whl_entry_no_extras():
+    """Test that a package with no extras produces an empty extras dict."""
+    pypi_data = {
+        "info": {
+            "name": "certifi",
+            "version": "2024.12.14",
+            "requires_dist": None,
+            "requires_python": ">=3.6",
+        },
+        "urls": [
+            {
+                "packagetype": "bdist_wheel",
+                "filename": "certifi-2024.12.14-py3-none-any.whl",
+                "url": "https://files.pythonhosted.org/packages/.../certifi-2024.12.14-py3-none-any.whl",
+                "size": 164934,
+                "digests": {"sha256": "abc000"},
+            }
+        ],
+    }
+
+    entry = pypi_to_repodata_whl_entry(pypi_data)
+
+    assert entry is not None
+    assert "extras" in entry
+    assert entry["extras"] == {}
+
+
 def test_pypi_to_repodata_whl_entry_no_wheel():
     """Test that None is returned when no wheel is available."""
     pypi_data = {
@@ -202,6 +283,62 @@ def test_channeldata_structure():
     assert channeldata["channeldata_version"] == 1
     assert "subdirs" in channeldata
     assert "noarch" in channeldata["subdirs"]
+
+
+def test_repodata_extras_field_present():
+    """Test that every package entry in repodata.json has an 'extras' field."""
+    repo_root = Path(__file__).parent
+    repodata_file = repo_root / "noarch" / "repodata.json"
+
+    with open(repodata_file) as f:
+        repodata = json.load(f)
+
+    packages = repodata["packages.whl"]
+    assert len(packages) > 0, "No packages to test"
+
+    for key, entry in packages.items():
+        assert "extras" in entry, f"Package {key} is missing 'extras' field"
+        assert isinstance(entry["extras"], dict), f"Package {key} 'extras' is not a dict"
+
+
+def test_repodata_extras_not_in_depends():
+    """Test that extras deps are never duplicated in the top-level depends list."""
+    repo_root = Path(__file__).parent
+    repodata_file = repo_root / "noarch" / "repodata.json"
+
+    with open(repodata_file) as f:
+        repodata = json.load(f)
+
+    packages = repodata["packages.whl"]
+    for key, entry in packages.items():
+        extras_deps = {dep for deps in entry.get("extras", {}).values() for dep in deps}
+        for dep in entry.get("depends", []):
+            assert dep not in extras_deps, (
+                f"Package {key}: dep '{dep}' appears in both depends and extras"
+            )
+
+
+def test_repodata_has_packages_with_extras():
+    """Test that the generated repodata contains at least one package with non-empty extras.
+
+    This guards against a regression where extras are silently dropped. The
+    packages-test.txt fixture intentionally includes packages that have extras
+    (e.g. httpx, requests) so this assertion should always pass when run after
+    generating from that file.
+    """
+    repo_root = Path(__file__).parent
+    repodata_file = repo_root / "noarch" / "repodata.json"
+
+    with open(repodata_file) as f:
+        repodata = json.load(f)
+
+    packages = repodata["packages.whl"]
+    packages_with_extras = [k for k, v in packages.items() if v.get("extras")]
+    assert len(packages_with_extras) > 0, (
+        "No packages with extras found in repodata. "
+        "Ensure packages-test.txt includes packages that declare extras "
+        "(e.g. httpx, requests)."
+    )
 
 
 def test_compressed_files_valid():
