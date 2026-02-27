@@ -9,4 +9,4 @@ dependencies:
   - python>=3.10
   - requests  # used by generate.py
   - unearth
-  - zstandard
+  - backports.zstd

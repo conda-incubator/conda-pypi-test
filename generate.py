@@ -11,7 +11,10 @@ Usage:
 import argparse
 import asyncio
 import json
-import zstandard as zstd
+try:
+    from compression.zstd import compress as zstd_compress  # Python 3.14+
+except ImportError:
+    from backports.zstd import compress as zstd_compress  # type: ignore[no-redef]
 import httpx
 import re
 import time
@@ -388,9 +391,8 @@ async def generate_repodata(
 
     # Write zstd compressed version
     zst_file = output_dir / "repodata.json.zst"
-    cctx = zstd.ZstdCompressor(level=19)
     with open(zst_file, "wb") as f:
-        f.write(cctx.compress(json_bytes))
+        f.write(zstd_compress(json_bytes, level=19))
     print(f"✨ Compressed (zstd) → {zst_file}")
 
     return repodata_output
