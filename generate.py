@@ -70,7 +70,7 @@ def map_package_name(pypi_name: str) -> str:
     normalized = normalize_name(pypi_name)
 
     if normalized in mapping:
-        return normalize_name(mapping[normalized].get("conda_name", normalized))
+        return mapping[normalized].get("conda_name", normalized).lower()
 
     return normalized
 
