@@ -64,13 +64,15 @@ def normalize_name(name: str) -> str:
 def map_package_name(pypi_name: str) -> str:
     """
     Map a PyPI package name to its conda equivalent using grayskull mapping.
-    Falls back to normalized name if no mapping exists.
+    Fall back to normalized name if no mapping exists.
     """
     mapping = _MAPPING_CACHE or {}
     normalized = normalize_name(pypi_name)
 
     if normalized in mapping:
-        return normalize_name(mapping[normalized].get("conda_name", normalized))
+        # Use the conda canonical name as-is (only lowercase)
+        # Do not convert underscores to hyphens
+        return mapping[normalized].get("conda_name", normalized).lower()
 
     return normalized
 

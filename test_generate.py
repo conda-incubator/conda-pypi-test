@@ -5,10 +5,36 @@ Tests for generate.py
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 from generate import (
+    map_package_name,
     pypi_to_repodata_whl_entry,
     parse_packages_file,
 )
+
+
+def test_map_package_name_preserves_conda_underscores():
+    """Grayskull conda_name underscores must be preserved so the solver can
+    unify PyPI-backed packages with existing conda packages from defaults.
+
+    """
+    mapping = {
+        "huggingface-hub": {"conda_name": "huggingface_hub"},
+        "scikit-learn": {"conda_name": "scikit-learn"},
+        "Pillow": {"conda_name": "pillow"},
+    }
+    with patch("generate._MAPPING_CACHE", mapping):
+        assert map_package_name("huggingface_hub") == "huggingface_hub"
+        assert map_package_name("huggingface-hub") == "huggingface_hub"
+        assert map_package_name("scikit-learn") == "scikit-learn"
+        assert map_package_name("Pillow") == "pillow"
+
+
+def test_map_package_name_falls_back_to_normalized():
+    """Packages not in the grayskull mapping fall back to lowercased hyphenated name."""
+    with patch("generate._MAPPING_CACHE", {}):
+        assert map_package_name("My_Package") == "my-package"
+        assert map_package_name("some_lib") == "some-lib"
 
 
 def test_pypi_to_repodata_whl_entry():
