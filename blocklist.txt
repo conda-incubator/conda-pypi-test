@@ -2,5 +2,7 @@
 # One package name per line (lowercase, hyphen-normalized).
 # Reason to exclude packages include:
 # 1. Wheels bundle compiled native libraries but are marked as pure-Python noarch
+# 2. Shadows name on conda, but is unrelated
 
 lerc
+tk
