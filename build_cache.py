@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+"""Build a local SQLite cache of package metadata from packages.txt."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import contextlib
+import random
+import sqlite3
+from pathlib import Path
+
+import httpx
+from hishel import SyncSqliteStorage
+from hishel.httpx import SyncCacheTransport
+from unearth import PackageFinder
+
+# Do not use unearth.fetchers.pypiclient
+from unearth.fetchers.sync import PyPIClient
+
+PYPI_SIMPLE_INDEX_URL = "https://pypi.org/simple/"
+
+
+def report_progress(message: str) -> None:
+    print(message, flush=True)
+
+
+def load_requirements(path: Path) -> list[str]:
+    """Read package requirements from a plain text file."""
+    requirements: list[str] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            requirements.append(line)
+    return requirements
+
+
+def create_results_db(path: Path) -> sqlite3.Connection:
+    """Create/open the sqlite cache database and ensure schema exists."""
+    connection = sqlite3.connect(path)
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cache (
+            url TEXT PRIMARY KEY,
+            name TEXT,
+            version TEXT,
+            metadata_text TEXT
+        )
+        """
+    )
+    return connection
+
+
+def create_finder(cache_db_path: Path) -> PackageFinder:
+    """Create a PackageFinder whose HTTP requests are cached by hishel."""
+    # Finder requests run in threadpool workers, so disable sqlite thread affinity.
+    cache_connection = sqlite3.connect(cache_db_path, check_same_thread=False)
+    storage = SyncSqliteStorage(
+        connection=cache_connection,
+        database_path=cache_db_path,
+    )
+    mounts = {
+        "http://": SyncCacheTransport(httpx.HTTPTransport(), storage=storage),
+        "https://": SyncCacheTransport(httpx.HTTPTransport(), storage=storage),
+    }
+    client = PyPIClient(mounts=mounts)
+    return PackageFinder(session=client, index_urls=[PYPI_SIMPLE_INDEX_URL])
+
+
+def resolve_requirement(
+    requirement: str, finder: PackageFinder
+) -> tuple[str, str, str, str] | None:
+    """Resolve one requirement and return a DB row: (url, name, version, metadata_text)."""
+    try:
+        match = finder.find_best_match(requirement)
+        if match.best is None:
+            return None
+
+        package = match.best
+        link = package.link
+        metadata_text = ""
+        if link.dist_info_link is not None:
+            response = finder.session.get(link.dist_info_link.url_without_fragment)
+            response.raise_for_status()
+            metadata_text = response.content.decode("utf-8", errors="replace")
+
+        return (
+            link.url_without_fragment,
+            package.name,
+            str(package.version) if package.version is not None else "",
+            metadata_text,
+        )
+    except Exception:
+        return None
+
+
+async def process_requirements(
+    requirements: list[str],
+    cache_db_path: Path,
+    output_db_path: Path,
+    concurrency: int,
+    timeout_seconds: int,
+) -> tuple[int, int, bool, int]:
+    """Resolve requirements concurrently and write rows into sqlite."""
+    if concurrency < 1:
+        raise ValueError("concurrency must be >= 1")
+    if timeout_seconds < 1:
+        raise ValueError("timeout_seconds must be >= 1")
+
+    connection = create_results_db(output_db_path)
+    finder = create_finder(cache_db_path)
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    for requirement in requirements:
+        queue.put_nowait(requirement)
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + float(timeout_seconds)
+    lock = asyncio.Lock()
+    found = 0
+    missing = 0
+    completed = 0
+    total = len(requirements)
+    in_progress: set[str] = set()
+    timed_out = False
+
+    async def progress_reporter() -> None:
+        while True:
+            await asyncio.sleep(5)
+            async with lock:
+                remaining_seconds = max(0, int(deadline - loop.time()))
+                current = next(iter(in_progress), None)
+                if current is None:
+                    report_progress(
+                        f"[progress] completed={completed}/{total}, current=(idle), remaining={remaining_seconds}s",
+                    )
+                else:
+                    report_progress(
+                        f"[progress] completed={completed}/{total}, current={current}, remaining={remaining_seconds}s",
+                    )
+
+    async def worker() -> None:
+        nonlocal found, missing, completed, timed_out
+        while True:
+            async with lock:
+                if timed_out:
+                    return
+                if loop.time() >= deadline:
+                    timed_out = True
+                    return
+                try:
+                    next_requirement = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                in_progress.add(next_requirement)
+
+            row = await asyncio.to_thread(
+                resolve_requirement, next_requirement, finder
+            )
+
+            async with lock:
+                in_progress.discard(next_requirement)
+                completed += 1
+                if row is None:
+                    missing += 1
+                    continue
+                connection.execute(
+                    """
+                    INSERT INTO cache(url, name, version, metadata_text)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(url) DO UPDATE SET
+                        name=excluded.name,
+                        version=excluded.version,
+                        metadata_text=excluded.metadata_text
+                    """,
+                    row,
+                )
+                found += 1
+
+    progress_task = asyncio.create_task(progress_reporter())
+    workers = [asyncio.create_task(worker()) for _ in range(concurrency)]
+    try:
+        await asyncio.gather(*workers)
+        progress_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await progress_task
+    finally:
+        for task in workers:
+            if not task.done():
+                task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.gather(*workers)
+        if not progress_task.done():
+            progress_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await progress_task
+        with contextlib.suppress(Exception):
+            connection.commit()
+        finder.session.close()
+        connection.close()
+
+    skipped = total - completed
+    return found, missing, timed_out, skipped
+
+
+async def async_main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Resolve packages with unearth and cache metadata text in sqlite.",
+    )
+    parser.add_argument(
+        "--packages",
+        type=Path,
+        default=Path("packages.txt"),
+        help="Input requirements file (default: packages.txt).",
+    )
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=Path("build_cache.sqlite3"),
+        help="Output sqlite database (default: build_cache.sqlite3).",
+    )
+    parser.add_argument(
+        "--http-cache-db",
+        type=Path,
+        default=Path("hishel_http_cache.sqlite3"),
+        help="hishel cache sqlite for HTTP responses (default: hishel_http_cache.sqlite3).",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=20,
+        help="Number of concurrent requirement lookups (default: 20).",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Stop scheduling new lookups after this many seconds (default: 300).",
+    )
+    args = parser.parse_args()
+
+    requirements = load_requirements(args.packages)
+    random.shuffle(requirements)
+    total = len(requirements)
+    if total == 0:
+        report_progress(f"No package requirements found in {args.packages}")
+        return
+
+    found, missing, timed_out, skipped = await process_requirements(
+        requirements=requirements,
+        cache_db_path=args.http_cache_db,
+        output_db_path=args.db,
+        concurrency=args.concurrency,
+        timeout_seconds=args.timeout,
+    )
+    completed = total - skipped
+    report_progress(f"Completed {completed}/{total} requirements")
+    report_progress(f"Cached {found} records in {args.db}")
+    report_progress(f"No match for {missing} requirements")
+    if timed_out:
+        report_progress(f"Stopped after timeout of {args.timeout}s")
+        report_progress(f"Unprocessed requirements: {skipped}")
+
+
+def main() -> None:
+    asyncio.run(async_main())
+
+
+if __name__ == "__main__":
+    main()

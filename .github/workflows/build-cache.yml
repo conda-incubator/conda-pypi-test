@@ -1,0 +1,68 @@
+name: Build Metadata Cache
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages.txt"
+      - "build_cache.py"
+      - "environment.yml"
+      - ".github/workflows/build-cache.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-cache:
+    name: Build SQLite Cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment.yml
+          cache-environment: true
+          init-shell: bash
+
+      - name: Restore sqlite caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            build_cache.sqlite3
+            hishel_http_cache.sqlite3
+          key: build-cache-${{ runner.os }}-${{ hashFiles('packages.txt') }}
+          restore-keys: |
+            build-cache-${{ runner.os }}-
+
+      - name: Run build_cache.py
+        shell: micromamba-shell {0}
+        run: |
+          python build_cache.py --packages packages.txt --db build_cache.sqlite3 --http-cache-db hishel_http_cache.sqlite3 --timeout 3600
+
+      - name: Compress cache databases
+        run: |
+          files=()
+          for f in build_cache.sqlite3 hishel_http_cache.sqlite3; do
+            if [ -f "$f" ]; then
+              files+=("$f")
+            fi
+          done
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No sqlite cache files found; skipping compression."
+            exit 0
+          fi
+          tar -I 'zstd -T0' -cf sqlite-caches.tar.zst "${files[@]}"
+
+      - name: Upload compressed cache artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlite-caches-zstd
+          path: sqlite-caches.tar.zst
+          if-no-files-found: warn
