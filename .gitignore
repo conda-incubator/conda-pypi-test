@@ -51,5 +51,5 @@ noarch/index.html
 channeldata.json
 
 # Data
-*packages.txt
+*-packages.txt
 *.sqlite3*
