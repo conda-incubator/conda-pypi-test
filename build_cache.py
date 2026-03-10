@@ -9,11 +9,13 @@ import contextlib
 import random
 import sqlite3
 from pathlib import Path
+from typing import cast
 
 import httpx
 from hishel import SyncSqliteStorage
 from hishel.httpx import SyncCacheTransport
 from unearth import PackageFinder
+from unearth.fetchers import Fetcher
 
 # Do not use unearth.fetchers.pypiclient
 from unearth.fetchers.sync import PyPIClient
@@ -66,7 +68,10 @@ def create_finder(cache_db_path: Path) -> PackageFinder:
         "https://": SyncCacheTransport(httpx.HTTPTransport(), storage=storage),
     }
     client = PyPIClient(mounts=mounts)
-    return PackageFinder(session=client, index_urls=[PYPI_SIMPLE_INDEX_URL])
+    return PackageFinder(
+        session=cast(Fetcher, client),
+        index_urls=[PYPI_SIMPLE_INDEX_URL],
+    )
 
 
 def resolve_requirement(
@@ -116,6 +121,7 @@ async def process_requirements(
         queue.put_nowait(requirement)
 
     loop = asyncio.get_running_loop()
+    start_time = loop.time()
     deadline = loop.time() + float(timeout_seconds)
     lock = asyncio.Lock()
     found = 0
@@ -130,14 +136,16 @@ async def process_requirements(
             await asyncio.sleep(5)
             async with lock:
                 remaining_seconds = max(0, int(deadline - loop.time()))
+                elapsed_seconds = max(0.001, loop.time() - start_time)
+                packages_per_second = completed / elapsed_seconds
                 current = next(iter(in_progress), None)
                 if current is None:
                     report_progress(
-                        f"[progress] completed={completed}/{total}, current=(idle), remaining={remaining_seconds}s",
+                        f"[progress] completed={completed}/{total}, rate={packages_per_second:.2f} pkg/s, current=(idle), remaining={remaining_seconds}s",
                     )
                 else:
                     report_progress(
-                        f"[progress] completed={completed}/{total}, current={current}, remaining={remaining_seconds}s",
+                        f"[progress] completed={completed}/{total}, rate={packages_per_second:.2f} pkg/s, current={current}, remaining={remaining_seconds}s",
                     )
 
     async def worker() -> None:
@@ -197,7 +205,7 @@ async def process_requirements(
                 await progress_task
         with contextlib.suppress(Exception):
             connection.commit()
-        finder.session.close()
+        cast(PyPIClient, finder.session).close()
         connection.close()
 
     skipped = total - completed
