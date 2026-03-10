@@ -31,12 +31,18 @@ jobs:
           cache-environment: true
           init-shell: bash
 
-      - name: Restore sqlite caches
+      - name: Restore http cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            hishel_http_cache.sqlite3
+          key: build-cache-${{ runner.os }}
+
+      - name: Restore output cache
         uses: actions/cache@v4
         with:
           path: |
             build_cache.sqlite3
-            hishel_http_cache.sqlite3
           key: build-cache-${{ runner.os }}-${{ hashFiles('packages.txt') }}
           restore-keys: |
             build-cache-${{ runner.os }}-
