@@ -11,3 +11,6 @@ dependencies:
   - requests  # used by generate.py
   - unearth
   - backports.zstd
+  - msgpack # hishel[async]
+  - typing-extensions # hishel[async]
+  - anysqlite # hishel[async]
