@@ -4,22 +4,28 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import queue
 import random
 import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import cast
+from typing import Callable, cast
 
+import httpx
+from hishel import SyncSqliteStorage
+from hishel.httpx import SyncCacheTransport
 from unearth import PackageFinder
 from unearth.fetchers import Fetcher
+from unearth.fetchers.sync import PyPIClient
 
 from unearth_fetcher import SharedAsyncPyPIClient
 
 PYPI_SIMPLE_INDEX_URL = "https://pypi.org/simple/"
 ResultRow = tuple[str, str, str, str] | None
 ResultItem = tuple[str, ResultRow]
+CloseFetcher = Callable[[], None]
 
 
 def report_progress(message: str) -> None:
@@ -54,20 +60,54 @@ def create_results_db(path: Path) -> sqlite3.Connection:
     return connection
 
 
-def create_finder(cache_db_path: Path) -> tuple[PackageFinder, SharedAsyncPyPIClient]:
-    """Create one shared PackageFinder backed by SharedAsyncPyPIClient."""
-    try:
-        client = SharedAsyncPyPIClient(http_cache_db_path=cache_db_path)
-    except ImportError as error:
-        raise RuntimeError(
-            "SharedAsyncPyPIClient requires hishel async sqlite support. "
-            "Install dependencies with `pip install hishel[async] anysqlite`."
-        ) from error
-    finder = PackageFinder(
-        session=cast(Fetcher, client),
-        index_urls=[PYPI_SIMPLE_INDEX_URL],
-    )
-    return finder, client
+def create_finder(
+    cache_db_path: Path,
+    client: str,
+    request_timeout: float,
+) -> tuple[PackageFinder, CloseFetcher]:
+    """Create a finder using either shared async or normal sync fetcher."""
+    if client == "shared-async":
+        try:
+            async_client = SharedAsyncPyPIClient(
+                http_cache_db_path=cache_db_path,
+                timeout=request_timeout,
+            )
+        except ImportError as error:
+            raise RuntimeError(
+                "SharedAsyncPyPIClient requires hishel async sqlite support. "
+                "Install dependencies with `pip install hishel[async] anysqlite`."
+            ) from error
+        finder = PackageFinder(
+            session=cast(Fetcher, async_client),
+            index_urls=[PYPI_SIMPLE_INDEX_URL],
+        )
+        return finder, async_client.close
+
+    if client == "sync":
+        cache_connection = sqlite3.connect(cache_db_path, check_same_thread=False)
+        storage = SyncSqliteStorage(
+            connection=cache_connection,
+            database_path=cache_db_path,
+        )
+        mounts = {
+            "http://": SyncCacheTransport(httpx.HTTPTransport(), storage=storage),
+            "https://": SyncCacheTransport(httpx.HTTPTransport(), storage=storage),
+        }
+        sync_client = PyPIClient(mounts=mounts, timeout=request_timeout)
+        finder = PackageFinder(
+            session=cast(Fetcher, sync_client),
+            index_urls=[PYPI_SIMPLE_INDEX_URL],
+        )
+
+        def close_sync_client() -> None:
+            with contextlib.suppress(Exception):
+                sync_client.close()
+            with contextlib.suppress(Exception):
+                cache_connection.close()
+
+        return finder, close_sync_client
+
+    raise ValueError(f"Unsupported client type: {client}")
 
 
 def resolve_requirement(
@@ -101,6 +141,7 @@ def process_requirements(
     requirements: list[str],
     cache_db_path: Path,
     output_db_path: Path,
+    client: str,
     concurrency: int,
     timeout_seconds: int,
 ) -> tuple[int, int, bool, int]:
@@ -113,6 +154,8 @@ def process_requirements(
     total = len(requirements)
     start_time = time.monotonic()
     deadline = time.monotonic() + float(timeout_seconds)
+    request_timeout = 10.0
+    shutdown_grace_seconds = 1.0
 
     requirements_queue: queue.Queue[str] = queue.Queue()
     for requirement in requirements:
@@ -131,30 +174,31 @@ def process_requirements(
     stop_event = threading.Event()
     collector_done_event = threading.Event()
 
-    finder, client = create_finder(cache_db_path)
+    finder, close_finder = create_finder(cache_db_path, client, request_timeout)
     collector_error: Exception | None = None
 
     def worker() -> None:
         nonlocal timed_out
-        while not stop_event.is_set():
-            if time.monotonic() >= deadline:
+        try:
+            while not stop_event.is_set():
+                if time.monotonic() >= deadline:
+                    with state_lock:
+                        timed_out = True
+                    stop_event.set()
+                    break
+
+                try:
+                    next_requirement = requirements_queue.get_nowait()
+                except queue.Empty:
+                    break
+
                 with state_lock:
-                    timed_out = True
-                stop_event.set()
-                break
+                    in_progress.add(next_requirement)
 
-            try:
-                next_requirement = requirements_queue.get_nowait()
-            except queue.Empty:
-                break
-
-            with state_lock:
-                in_progress.add(next_requirement)
-
-            row = resolve_requirement(next_requirement, finder)
-            results_queue.put((next_requirement, row))
-
-        results_queue.put(sentinel)
+                row = resolve_requirement(next_requirement, finder)
+                results_queue.put((next_requirement, row))
+        finally:
+            results_queue.put(sentinel)
 
     def collector() -> None:
         nonlocal found, missing, completed, collector_error
@@ -164,7 +208,7 @@ def process_requirements(
         try:
             while done_workers < concurrency:
                 try:
-                    item = results_queue.get(timeout=1)
+                    item = results_queue.get(timeout=0.1)
                 except queue.Empty:
                     continue
 
@@ -226,20 +270,40 @@ def process_requirements(
     workers = [threading.Thread(target=worker, daemon=True) for _ in range(concurrency)]
     collector_thread = threading.Thread(target=collector, daemon=True)
     progress_thread = threading.Thread(target=progress_reporter, daemon=True)
+    lingering_workers = False
 
     try:
         collector_thread.start()
         progress_thread.start()
         for thread in workers:
             thread.start()
-        for thread in workers:
-            thread.join()
-        collector_thread.join()
+
+        while any(thread.is_alive() for thread in workers):
+            if time.monotonic() >= deadline:
+                timed_out = True
+                stop_event.set()
+                break
+            time.sleep(0.05)
+
+        if timed_out:
+            grace_deadline = time.monotonic() + shutdown_grace_seconds
+            while any(thread.is_alive() for thread in workers):
+                remaining = grace_deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(0.05, remaining))
+            collector_thread.join(timeout=max(0.0, grace_deadline - time.monotonic()))
+            lingering_workers = any(thread.is_alive() for thread in workers)
+        else:
+            for thread in workers:
+                thread.join()
+            collector_thread.join()
     finally:
         stop_event.set()
         collector_done_event.set()
         progress_thread.join(timeout=1)
-        client.close()
+        if not lingering_workers:
+            close_finder()
 
     if collector_error is not None:
         raise RuntimeError("collector thread failed") from collector_error
@@ -271,6 +335,12 @@ def main() -> None:
         help="hishel cache sqlite for HTTP responses (default: hishel_http_cache.sqlite3).",
     )
     parser.add_argument(
+        "--client",
+        choices=["shared-async", "sync"],
+        default="shared-async",
+        help="Fetcher type (default: shared-async).",
+    )
+    parser.add_argument(
         "--concurrency",
         type=int,
         default=32,
@@ -295,6 +365,7 @@ def main() -> None:
         requirements=requirements,
         cache_db_path=args.http_cache_db,
         output_db_path=args.db,
+        client=args.client,
         concurrency=args.concurrency,
         timeout_seconds=args.timeout,
     )
