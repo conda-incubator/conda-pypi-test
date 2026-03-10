@@ -46,7 +46,7 @@ def load_requirements(path: Path) -> list[str]:
 
 def create_results_db(path: Path) -> sqlite3.Connection:
     """Create/open the sqlite cache database and ensure schema exists."""
-    connection = sqlite3.connect(path)
+    connection = sqlite3.connect(path, check_same_thread=False)
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS cache (
@@ -58,6 +58,18 @@ def create_results_db(path: Path) -> sqlite3.Connection:
         """
     )
     return connection
+
+
+def load_done_requirements(path: Path) -> set[str]:
+    """Load already-cached requirements as normalized requirement strings."""
+    connection = create_results_db(path)
+    try:
+        rows = connection.execute(
+            "SELECT name || '==' || version FROM cache"
+        ).fetchall()
+    finally:
+        connection.close()
+    return {row[0] for row in rows if row[0]}
 
 
 def create_finder(
@@ -93,7 +105,7 @@ def create_finder(
             "http://": SyncCacheTransport(httpx.HTTPTransport(), storage=storage),
             "https://": SyncCacheTransport(httpx.HTTPTransport(), storage=storage),
         }
-        sync_client = PyPIClient(mounts=mounts, timeout=request_timeout)
+        sync_client = PyPIClient(mounts=mounts, timeout=request_timeout, http2=True)
         finder = PackageFinder(
             session=cast(Fetcher, sync_client),
             index_urls=[PYPI_SIMPLE_INDEX_URL],
@@ -355,10 +367,15 @@ def main() -> None:
     args = parser.parse_args()
 
     requirements = load_requirements(args.packages)
+    done = load_done_requirements(args.db)
+    report_progress(f"{len(done)} packages already cached.")
+    requirements = [
+        requirement for requirement in requirements if requirement not in done
+    ]
     random.shuffle(requirements)
     total = len(requirements)
     if total == 0:
-        report_progress(f"No package requirements found in {args.packages}")
+        report_progress(f"No un-fetched requirements found in {args.packages}")
         return
 
     found, missing, timed_out, skipped = process_requirements(
