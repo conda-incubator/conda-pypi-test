@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import logging
 import queue
 import random
 import sqlite3
@@ -22,6 +23,7 @@ from unearth.fetchers.sync import PyPIClient
 
 from unearth_fetcher import SharedAsyncPyPIClient
 
+log = logging.getLogger(__name__)
 PYPI_SIMPLE_INDEX_URL = "https://pypi.org/simple/"
 ResultRow = tuple[str, str, str, str] | None
 ResultItem = tuple[str, ResultRow]
@@ -146,6 +148,7 @@ def resolve_requirement(
             metadata_text,
         )
     except Exception:
+        log.exception("Error resolving %s", requirement)
         return None
 
 
@@ -269,15 +272,11 @@ def process_requirements(
                 remaining_seconds = max(0, int(deadline - time.monotonic()))
                 elapsed = max(0.001, time.monotonic() - start_time)
                 packages_per_second = completed / elapsed
-                current = next(iter(in_progress), None)
-                if current is None:
-                    report_progress(
-                        f"[progress] completed={completed}/{total}, rate={packages_per_second:.2f} pkg/s, current=(idle), remaining={remaining_seconds}s",
-                    )
-                else:
-                    report_progress(
-                        f"[progress] completed={completed}/{total}, rate={packages_per_second:.2f} pkg/s, current={current}, remaining={remaining_seconds}s",
-                    )
+                current = next(iter(in_progress), "(idle)")
+                active_workers = sum(thread.is_alive() for thread in workers)
+                report_progress(
+                    f"[progress] completed={completed}/{total}, rate={packages_per_second:.2f} pkg/s, current={current}, remaining={remaining_seconds}s, workers={active_workers}",
+                )
 
     workers = [threading.Thread(target=worker, daemon=True) for _ in range(concurrency)]
     collector_thread = threading.Thread(target=collector, daemon=True)
@@ -396,4 +395,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    log.setLevel(logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
     main()
