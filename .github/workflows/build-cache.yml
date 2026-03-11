@@ -19,6 +19,9 @@ jobs:
     name: Build SQLite Cache
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    concurrency:
+      group: build-cache
+      cancel-in-progress: false
 
     steps:
       - name: Checkout repository
