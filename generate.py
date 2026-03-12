@@ -11,13 +11,15 @@ Usage:
 import argparse
 import asyncio
 import json
+from enum import Enum
+
 try:
     from compression.zstd import compress as zstd_compress  # Python 3.14+
 except ImportError:
     from backports.zstd import compress as zstd_compress  # type: ignore[no-redef]
 import httpx
-import re
 import time
+from packaging.markers import Marker
 from packaging.requirements import Requirement, InvalidRequirement
 from pathlib import Path
 from typing import Any
@@ -28,6 +30,39 @@ GRAYSKULL_MAPPING_URL = "https://raw.githubusercontent.com/regro/cf-graph-county
 
 # Global cache for the mapping data
 _MAPPING_CACHE: dict[str, dict[str, str]] | None = None
+
+
+class MarkerVar(str, Enum):
+    PYTHON_VERSION = "python_version"
+    PYTHON_FULL_VERSION = "python_full_version"
+    EXTRA = "extra"
+    SYS_PLATFORM = "sys_platform"
+    PLATFORM_SYSTEM = "platform_system"
+    OS_NAME = "os_name"
+    IMPLEMENTATION_NAME = "implementation_name"
+    PLATFORM_PYTHON_IMPLEMENTATION = "platform_python_implementation"
+    PLATFORM_MACHINE = "platform_machine"
+
+
+class MarkerOp(str, Enum):
+    EQ = "=="
+    NE = "!="
+    NOT_IN = "not in"
+
+
+SYSTEM_TO_VIRTUAL_PACKAGE = {
+    "windows": "__win",
+    "win32": "__win",
+    "linux": "__linux",
+    "darwin": "__osx",
+    "cygwin": "__unix",
+}
+
+OS_NAME_TO_VIRTUAL_PACKAGE = {
+    "nt": "__win",
+    "windows": "__win",
+    "posix": "__unix",
+}
 
 
 async def load_grayskull_mapping() -> dict[str, dict[str, str]]:
@@ -77,18 +112,128 @@ def map_package_name(pypi_name: str) -> str:
     return normalized
 
 
+def _marker_value(token: Any) -> str:
+    """Extract the textual value from packaging marker tokens."""
+    return getattr(token, "value", str(token))
+
+
+def _normalize_marker_atom(lhs: str, op: str, rhs: str) -> str | None:
+    """Map one marker atom to a MatchSpec-like conditional fragment."""
+    lhs_l = lhs.lower()
+    rhs_l = rhs.lower()
+
+    if lhs_l in {MarkerVar.PYTHON_VERSION, MarkerVar.PYTHON_FULL_VERSION}:
+        if op == MarkerOp.NOT_IN:
+            excluded_versions = [
+                version.strip() for version in rhs.split(",") if version.strip()
+            ]
+            if not excluded_versions:
+                return None
+            clauses = [f"python!={version}" for version in excluded_versions]
+            if len(clauses) == 1:
+                return clauses[0]
+            return f"({' and '.join(clauses)})"
+        return f"python{op}{rhs}"
+
+    if lhs_l == MarkerVar.EXTRA and op == MarkerOp.EQ:
+        return None
+
+    if lhs_l in {MarkerVar.SYS_PLATFORM, MarkerVar.PLATFORM_SYSTEM}:
+        mapped = SYSTEM_TO_VIRTUAL_PACKAGE.get(rhs_l)
+        if op == MarkerOp.EQ and mapped:
+            return mapped
+        if op == MarkerOp.NE and rhs_l in {"win32", "windows", "cygwin"}:
+            return "__unix"
+        if op == MarkerOp.NE and rhs_l == "emscripten":
+            return None
+        return None
+
+    if lhs_l == MarkerVar.OS_NAME:
+        mapped = OS_NAME_TO_VIRTUAL_PACKAGE.get(rhs_l)
+        if not mapped:
+            return None
+        if op == MarkerOp.EQ:
+            return mapped
+        if op == MarkerOp.NE:
+            return "__unix" if mapped == "__win" else "__win"
+        return None
+
+    if lhs_l in {
+        MarkerVar.IMPLEMENTATION_NAME,
+        MarkerVar.PLATFORM_PYTHON_IMPLEMENTATION,
+    }:
+        if rhs_l in {"cpython", "pypy", "jython"}:
+            return None
+        return None
+
+    if lhs_l == MarkerVar.PLATFORM_MACHINE:
+        return None
+
+    return None
+
+
+def _combine_expr(left: str | None, op: str, right: str | None) -> str | None:
+    """Combine optional left/right expressions with a boolean operator."""
+    if left is None:
+        return right
+    if right is None:
+        return left
+    if left == right:
+        return left
+    return f"({left} {op} {right})"
+
+
+def extract_marker_condition_and_extras(marker: Marker) -> tuple[str | None, list[str]]:
+    """Split a Marker into non-extra condition and `extra` group names."""
+    extras: list[str] = []
+    seen_extras: set[str] = set()
+
+    def visit(node: Any) -> str | None:
+        if isinstance(node, tuple) and len(node) == 3:
+            lhs = _marker_value(node[0])
+            op = _marker_value(node[1])
+            rhs = _marker_value(node[2])
+
+            if lhs.lower() == MarkerVar.EXTRA and op == MarkerOp.EQ:
+                extra_name = rhs.lower()
+                if extra_name not in seen_extras:
+                    seen_extras.add(extra_name)
+                    extras.append(extra_name)
+                return None
+
+            return _normalize_marker_atom(lhs, op, rhs)
+
+        if isinstance(node, list):
+            if not node:
+                return None
+            expr = visit(node[0])
+            i = 1
+            while i + 1 < len(node):
+                op = str(node[i]).lower()
+                rhs_expr = visit(node[i + 1])
+                expr = _combine_expr(expr, op, rhs_expr)
+                i += 2
+            return expr
+
+        return None
+
+    # Marker._markers is private in packaging; keep usage isolated here.
+    condition = visit(getattr(marker, "_markers", []))
+    return condition, extras
+
+
 def pypi_to_repodata_whl_entry(
     pypi_data: dict[str, Any], url_index: int = 0
 ) -> dict[str, Any] | None:
     """
-    Convert PyPI JSON endpoint data to a repodata.json packages.whl entry.
+    Convert PyPI JSON endpoint data to a repodata.json v3.whl entry.
 
     Args:
         pypi_data: Dictionary containing the complete info section from PyPI JSON endpoint
         url_index: Index of the wheel URL to use (typically the first one is the wheel)
 
     Returns:
-        Dictionary representing the entry for packages.whl, or None if wheel not found
+        Dictionary representing the entry for v3.whl, or None if wheel not found
     """
     # Find a pure Python wheel (platform tag must be "none-any").
     # Wheels with compiled native code use platform-specific tags such as
@@ -115,9 +260,9 @@ def pypi_to_repodata_whl_entry(
     conda_name = map_package_name(pypi_name)
     version = pypi_info.get("version")
 
-    # Build dependency list and extras dict with name mapping
+    # Build dependency list and optional dependency groups with name mapping
     depends_list = []
-    extras_dict: dict[str, list[str]] = {}
+    extra_depends_dict: dict[str, list[str]] = {}
     for dep in pypi_info.get("requires_dist") or []:
         try:
             req = Requirement(dep)
@@ -128,13 +273,22 @@ def pypi_to_repodata_whl_entry(
         conda_dep = map_package_name(req.name) + str(req.specifier)
 
         if req.marker:
-            extra_match = re.search(
-                r'extra\s*==\s*["\']([^"\']+)["\']', str(req.marker)
+            non_extra_condition, extra_names = extract_marker_condition_and_extras(
+                req.marker
             )
-            if extra_match:
-                extras_dict.setdefault(extra_match.group(1), []).append(conda_dep)
+            if extra_names:
+                for extra_name in extra_names:
+                    extra_dep = conda_dep
+                    if non_extra_condition:
+                        marker_condition = json.dumps(non_extra_condition)
+                        extra_dep = f"{extra_dep}[when={marker_condition}]"
+                    extra_depends_dict.setdefault(extra_name, []).append(extra_dep)
             else:
-                depends_list.append(conda_dep)
+                if non_extra_condition:
+                    marker_condition = json.dumps(non_extra_condition)
+                    depends_list.append(f"{conda_dep}[when={marker_condition}]")
+                else:
+                    depends_list.append(conda_dep)
         else:
             depends_list.append(conda_dep)
 
@@ -146,9 +300,6 @@ def pypi_to_repodata_whl_entry(
         # Noarch python packages should still depend on python when PyPI omits requires_python
         depends_list.append("python")
 
-    # Extract filename components
-    filename = wheel_url.get("filename", "")
-
     # Build the repodata entry
     entry = {
         "url": wheel_url.get("url", ""),
@@ -158,7 +309,7 @@ def pypi_to_repodata_whl_entry(
         "build": "py3_none_any_0",
         "build_number": 0,
         "depends": depends_list,
-        "extras": extras_dict,
+        "extra_depends": extra_depends_dict,
         "sha256": wheel_url.get("digests", {}).get("sha256", ""),
         "size": wheel_url.get("size", 0),
         "subdir": "noarch",
@@ -377,9 +528,9 @@ async def generate_repodata(
         "packages": {},
         "packages.conda": {},
         "removed": [],
-        "repodata_version": 1,
+        "repodata_version": 3,
         "signatures": {},
-        "packages.whl": {key: value for key, value in sorted(pkg_whls.items())},
+        "v3": {"whl": {key: value for key, value in sorted(pkg_whls.items())}},
     }
 
     # Create output directory
