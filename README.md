@@ -6,6 +6,32 @@ A simple development conda channel for testing repodata for conda-pypi.
 > This is for testing new repodata formats and it is not for production use!
 > If you are looking for production index generation use [conda-index](https://github.com/conda/conda-index).
 
+## Quickstart for Using the Channel with conda
+
+### Install the conda-pypi plugin
+
+This will install the conda-pypi plugin and its dependencies:
+
+```bash
+conda install -n base "conda-pypi>=0.5.0"
+```
+
+### Configure the solver
+
+The rattler solver is required for wheel installation:
+
+```bash
+conda config --set solver rattler
+```
+
+### Add the conda-pypi-test channel to your `.condarc`
+
+This temporary test channel indexes approximately 500K pure Python wheels, latest version only:
+
+```bash
+conda config --append channels https://github.com/conda-incubator/conda-pypi-test/releases/download
+```
+
 ## Setup
 
 ```bash
@@ -39,32 +65,6 @@ python generate.py
 ```
 
 This creates `noarch/repodata.json` and `.zst`. Use the channel locally with `conda install -c . package-name`.
-
-## Quickstart for Using the Channel with conda
-
-### Install the conda-pypi plugin
-
-This will install the conda-pypi plugin and its dependencies:
-
-```bash
-conda install -n base conda-pypi
-```
-
-### Configure the solver
-
-The rattler solver is required for wheel installation:
-
-```bash
-conda config --set solver rattler
-```
-
-### Add the conda-pypi-test channel to your `.condarc`
-
-This temporary test channel indexes approximately 500K pure Python wheels, latest version only:
-
-```bash
-conda config --add channels https://github.com/conda-incubator/conda-pypi-test/releases/download/noarch
-```
 
 ## GitHub Releases
 
