@@ -106,22 +106,22 @@ def test_pypi_to_repodata_whl_entry_with_extras():
     entry = pypi_to_repodata_whl_entry(pypi_data)
 
     assert entry is not None
-    assert "extras" in entry
+    assert "extra_depends" in entry
 
-    extras = entry["extras"]
+    extra_depends = entry["extra_depends"]
     # Each declared extra should appear as a key
-    assert "asyncio" in extras
-    assert "http2" in extras
-    assert "brotli" in extras
-    assert "socks" in extras
+    assert "asyncio" in extra_depends
+    assert "http2" in extra_depends
+    assert "brotli" in extra_depends
+    assert "socks" in extra_depends
 
     # Each extra's dep list should contain the right package name
-    assert any("anyio" in dep for dep in extras["asyncio"])
-    assert any("h2" in dep for dep in extras["http2"])
-    assert any("brotli" in dep for dep in extras["brotli"])
-    assert any("socksio" in dep for dep in extras["socks"])
+    assert any("anyio" in dep for dep in extra_depends["asyncio"])
+    assert any("h2" in dep for dep in extra_depends["http2"])
+    assert any("brotli" in dep for dep in extra_depends["brotli"])
+    assert any("socksio" in dep for dep in extra_depends["socks"])
 
-    # Non-extra deps must stay in depends, not bleed into extras
+    # Non-extra deps must stay in depends, not bleed into extra_depends
     assert any("certifi" in dep for dep in entry["depends"])
     assert any("httpcore" in dep for dep in entry["depends"])
     # Extra deps must not appear in depends
@@ -152,8 +152,8 @@ def test_pypi_to_repodata_whl_entry_no_extras():
     entry = pypi_to_repodata_whl_entry(pypi_data)
 
     assert entry is not None
-    assert "extras" in entry
-    assert entry["extras"] == {}
+    assert "extra_depends" in entry
+    assert entry["extra_depends"] == {}
 
 
 def test_pypi_to_repodata_whl_entry_no_wheel():
@@ -230,35 +230,36 @@ def test_generated_files_exist():
 
 
 def test_repodata_structure():
-    """Test that repodata.json has correct structure."""
+    """Test that repodata.json has the correct structure (repodata v3)."""
     repo_root = Path(__file__).parent
     repodata_file = repo_root / "noarch" / "repodata.json"
 
     with open(repodata_file) as f:
         repodata = json.load(f)
 
-    # Check required top-level keys
+    # Check required top-level keys (v3 format)
     required_keys = [
         "info",
         "packages",
         "packages.conda",
-        "packages.whl",
         "repodata_version",
+        "v3",
     ]
     for key in required_keys:
         assert key in repodata, f"Missing required key: {key}"
 
     # Check structure
-    assert isinstance(repodata["packages.whl"], dict)
+    assert "whl" in repodata["v3"]
+    assert isinstance(repodata["v3"]["whl"], dict)
     assert repodata["info"]["subdir"] == "noarch"
-    assert repodata["repodata_version"] == 1
+    assert repodata["repodata_version"] == 3
 
     # Check that we have at least one package
-    assert len(repodata["packages.whl"]) > 0, "No packages found in repodata"
+    assert len(repodata["v3"]["whl"]) > 0, "No packages found in repodata"
 
 
 def test_repodata_package_entries():
-    """Test that package entries have required fields."""
+    """Test that package entries have the required fields (v3 whl entries)."""
     repo_root = Path(__file__).parent
     repodata_file = repo_root / "noarch" / "repodata.json"
 
@@ -273,14 +274,15 @@ def test_repodata_package_entries():
         "build",
         "build_number",
         "depends",
+        "extra_depends",
         "sha256",
         "size",
         "subdir",
         "noarch",
     ]
 
-    # Check first package entry
-    packages = repodata["packages.whl"]
+    # Check first package entry (v3 whl)
+    packages = repodata["v3"]["whl"]
     assert len(packages) > 0, "No packages to test"
 
     first_package = next(iter(packages.values()))
@@ -291,6 +293,7 @@ def test_repodata_package_entries():
     assert isinstance(first_package["name"], str)
     assert isinstance(first_package["version"], str)
     assert isinstance(first_package["depends"], list)
+    assert isinstance(first_package["extra_depends"], dict)
     assert isinstance(first_package["size"], int)
     assert first_package["subdir"] == "noarch"
     assert first_package["noarch"] == "python"
@@ -310,43 +313,52 @@ def test_channeldata_structure():
     assert "noarch" in channeldata["subdirs"]
 
 
-def test_repodata_extras_field_present():
-    """Test that every package entry in repodata.json has an 'extras' field."""
+def test_repodata_extra_depends_field_present():
+    """Test that every package entry in repodata.json has an 'extra_depends' field."""
     repo_root = Path(__file__).parent
     repodata_file = repo_root / "noarch" / "repodata.json"
 
     with open(repodata_file) as f:
         repodata = json.load(f)
 
-    packages = repodata["packages.whl"]
+    packages = repodata["v3"]["whl"]
     assert len(packages) > 0, "No packages to test"
 
     for key, entry in packages.items():
-        assert "extras" in entry, f"Package {key} is missing 'extras' field"
-        assert isinstance(entry["extras"], dict), f"Package {key} 'extras' is not a dict"
+        assert "extra_depends" in entry, (
+            f"Package {key} is missing 'extra_depends' field"
+        )
+        assert isinstance(entry["extra_depends"], dict), (
+            f"Package {key} 'extra_depends' is not a dict"
+        )
 
 
-def test_repodata_extras_not_in_depends():
-    """Test that extras deps are never duplicated in the top-level depends list."""
+def test_repodata_depends_and_extra_depends_structure():
+    """Check that depends is a list and extra_depends is a dict of lists."""
     repo_root = Path(__file__).parent
     repodata_file = repo_root / "noarch" / "repodata.json"
 
     with open(repodata_file) as f:
         repodata = json.load(f)
 
-    packages = repodata["packages.whl"]
+    packages = repodata["v3"]["whl"]
     for key, entry in packages.items():
-        extras_deps = {dep for deps in entry.get("extras", {}).values() for dep in deps}
-        for dep in entry.get("depends", []):
-            assert dep not in extras_deps, (
-                f"Package {key}: dep '{dep}' appears in both depends and extras"
+        assert isinstance(entry.get("depends"), list), (
+            f"Package {key}: depends must be a list"
+        )
+        assert isinstance(entry.get("extra_depends"), dict), (
+            f"Package {key}: extra_depends must be a dict"
+        )
+        for extra_name, deps in entry.get("extra_depends", {}).items():
+            assert isinstance(deps, list), (
+                f"Package {key} extra {extra_name}: deps must be a list"
             )
 
 
-def test_repodata_has_packages_with_extras():
-    """Test that the generated repodata contains at least one package with non-empty extras.
+def test_repodata_has_packages_with_extra_depends():
+    """Test that the generated repodata contains at least one package with non-empty extra_depends.
 
-    This guards against a regression where extras are silently dropped. The
+    This guards against a regression where optional dependencies are silently dropped. The
     packages-test.txt fixture intentionally includes packages that have extras
     (e.g. httpx, requests) so this assertion should always pass when run after
     generating from that file.
@@ -357,10 +369,12 @@ def test_repodata_has_packages_with_extras():
     with open(repodata_file) as f:
         repodata = json.load(f)
 
-    packages = repodata["packages.whl"]
-    packages_with_extras = [k for k, v in packages.items() if v.get("extras")]
-    assert len(packages_with_extras) > 0, (
-        "No packages with extras found in repodata. "
+    packages = repodata["v3"]["whl"]
+    packages_with_extra_depends = [
+        k for k, v in packages.items() if v.get("extra_depends")
+    ]
+    assert len(packages_with_extra_depends) > 0, (
+        "No packages with extra_depends found in repodata. "
         "Ensure packages-test.txt includes packages that declare extras "
         "(e.g. httpx, requests)."
     )
