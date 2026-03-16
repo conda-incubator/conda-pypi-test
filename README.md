@@ -13,7 +13,7 @@ A simple development conda channel for testing repodata for conda-pypi.
 This will install the conda-pypi plugin and its dependencies:
 
 ```bash
-conda install -n base "conda-pypi>=0.5.0"
+conda install -n base 'conda-pypi>=0.5.0'
 ```
 
 ### Configure the solver
