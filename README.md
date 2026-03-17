@@ -13,7 +13,7 @@ A simple development conda channel for testing repodata for conda-pypi.
 This will install the conda-pypi plugin and its dependencies:
 
 ```bash
-conda install -n base 'conda-pypi>=0.5.0' 'conda-rattler-solver<0.0.6'
+conda install -n base 'conda-pypi>=0.5.0[build_number=">=2"]' 'conda-rattler-solver<0.0.6'
 ```
 
 ### Configure the solver
@@ -32,7 +32,25 @@ This temporary test channel indexes approximately 500K pure Python wheels, lates
 conda config --append channels https://github.com/conda-incubator/conda-pypi-test/releases/download
 ```
 
-## Setup
+### Uninstall
+
+To remove the channel and revert solver settings:
+
+```bash
+# Remove the test channel
+conda config --remove channels https://github.com/conda-incubator/conda-pypi-test/releases/download
+
+# Revert to your previous solver
+conda config --remove-key solver
+
+# Optionally remove the plugins
+conda remove -n base conda-pypi conda-rattler-solver
+
+# Remove test environments
+conda env remove -n <your-test-env>
+```
+
+## Development Setup
 
 ```bash
 conda env create --file environment.yml
