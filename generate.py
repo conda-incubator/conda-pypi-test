@@ -117,15 +117,26 @@ def _marker_value(token: Any) -> str:
     return getattr(token, "value", str(token))
 
 
-def _normalize_marker_atom(lhs: str, op: str, rhs: str) -> str | None:
-    """Map one marker atom to a MatchSpec-like conditional fragment."""
-    lhs_l = lhs.lower()
-    rhs_l = rhs.lower()
+def _normalize_marker_clause(
+    marker_name: str, op: str, marker_value: str
+) -> str | None:
+    """Map a single PEP 508 marker atom to a MatchSpec-like fragment.
 
-    if lhs_l in {MarkerVar.PYTHON_VERSION, MarkerVar.PYTHON_FULL_VERSION}:
+    Examples:
+    - ("sys_platform", "==", "win32") -> "__win"
+    - ("python_version", "<", "3.11") -> "python<3.11"
+    - ("python_version", "not in", "3.0, 3.1") -> "(python!=3.0 and python!=3.1)"
+    - ("implementation_name", "==", "cpython") -> None
+    """
+    marker_name = marker_name.lower()
+    marker_value = marker_value.lower()
+
+    if marker_name in {MarkerVar.PYTHON_VERSION, MarkerVar.PYTHON_FULL_VERSION}:
         if op == MarkerOp.NOT_IN:
             excluded_versions = [
-                version.strip() for version in rhs.split(",") if version.strip()
+                version.strip()
+                for version in marker_value.split(",")
+                if version.strip()
             ]
             if not excluded_versions:
                 return None
@@ -133,23 +144,23 @@ def _normalize_marker_atom(lhs: str, op: str, rhs: str) -> str | None:
             if len(clauses) == 1:
                 return clauses[0]
             return f"({' and '.join(clauses)})"
-        return f"python{op}{rhs}"
+        return f"python{op}{marker_value}"
 
-    if lhs_l == MarkerVar.EXTRA and op == MarkerOp.EQ:
+    if marker_name == MarkerVar.EXTRA and op == MarkerOp.EQ:
         return None
 
-    if lhs_l in {MarkerVar.SYS_PLATFORM, MarkerVar.PLATFORM_SYSTEM}:
-        mapped = SYSTEM_TO_VIRTUAL_PACKAGE.get(rhs_l)
+    if marker_name in {MarkerVar.SYS_PLATFORM, MarkerVar.PLATFORM_SYSTEM}:
+        mapped = SYSTEM_TO_VIRTUAL_PACKAGE.get(marker_value)
         if op == MarkerOp.EQ and mapped:
             return mapped
-        if op == MarkerOp.NE and rhs_l in {"win32", "windows", "cygwin"}:
+        if op == MarkerOp.NE and marker_value in {"win32", "windows", "cygwin"}:
             return "__unix"
-        if op == MarkerOp.NE and rhs_l == "emscripten":
+        if op == MarkerOp.NE and marker_value == "emscripten":
             return None
         return None
 
-    if lhs_l == MarkerVar.OS_NAME:
-        mapped = OS_NAME_TO_VIRTUAL_PACKAGE.get(rhs_l)
+    if marker_name == MarkerVar.OS_NAME:
+        mapped = OS_NAME_TO_VIRTUAL_PACKAGE.get(marker_value)
         if not mapped:
             return None
         if op == MarkerOp.EQ:
@@ -158,21 +169,21 @@ def _normalize_marker_atom(lhs: str, op: str, rhs: str) -> str | None:
             return "__unix" if mapped == "__win" else "__win"
         return None
 
-    if lhs_l in {
+    if marker_name in {
         MarkerVar.IMPLEMENTATION_NAME,
         MarkerVar.PLATFORM_PYTHON_IMPLEMENTATION,
     }:
-        if rhs_l in {"cpython", "pypy", "jython"}:
+        if marker_value in {"cpython", "pypy", "jython"}:
             return None
         return None
 
-    if lhs_l == MarkerVar.PLATFORM_MACHINE:
+    if marker_name == MarkerVar.PLATFORM_MACHINE:
         return None
 
     return None
 
 
-def _combine_expr(left: str | None, op: str, right: str | None) -> str | None:
+def _combine_conditions(left: str | None, op: str, right: str | None) -> str | None:
     """Combine optional left/right expressions with a boolean operator."""
     if left is None:
         return right
@@ -184,41 +195,47 @@ def _combine_expr(left: str | None, op: str, right: str | None) -> str | None:
 
 
 def extract_marker_condition_and_extras(marker: Marker) -> tuple[str | None, list[str]]:
-    """Split a Marker into non-extra condition and `extra` group names."""
+    """Split a Marker into optional non-extra condition and extra group names.
+
+    Examples:
+    - `extra == "docs"` -> `(None, ["docs"])`
+    - `python_version < "3.11" and extra == "test"` -> `("python<3.11", ["test"])`
+    - `sys_platform == "win32"` -> `("__win", [])`
+    """
     extras: list[str] = []
     seen_extras: set[str] = set()
 
-    def visit(node: Any) -> str | None:
+    def parse_marker_node(node: Any) -> str | None:
         if isinstance(node, tuple) and len(node) == 3:
-            lhs = _marker_value(node[0])
+            marker_name = _marker_value(node[0])
             op = _marker_value(node[1])
-            rhs = _marker_value(node[2])
+            marker_value = _marker_value(node[2])
 
-            if lhs.lower() == MarkerVar.EXTRA and op == MarkerOp.EQ:
-                extra_name = rhs.lower()
+            if marker_name.lower() == MarkerVar.EXTRA and op == MarkerOp.EQ:
+                extra_name = marker_value.lower()
                 if extra_name not in seen_extras:
                     seen_extras.add(extra_name)
                     extras.append(extra_name)
                 return None
 
-            return _normalize_marker_atom(lhs, op, rhs)
+            return _normalize_marker_clause(marker_name, op, marker_value)
 
         if isinstance(node, list):
             if not node:
                 return None
-            expr = visit(node[0])
-            i = 1
-            while i + 1 < len(node):
-                op = str(node[i]).lower()
-                rhs_expr = visit(node[i + 1])
-                expr = _combine_expr(expr, op, rhs_expr)
-                i += 2
-            return expr
+
+            condition_expr = parse_marker_node(node[0])
+            for op, rhs in zip(node[1::2], node[2::2]):
+                right_condition = parse_marker_node(rhs)
+                condition_expr = _combine_conditions(
+                    condition_expr, str(op).lower(), right_condition
+                )
+            return condition_expr
 
         return None
 
     # Marker._markers is private in packaging; keep usage isolated here.
-    condition = visit(getattr(marker, "_markers", []))
+    condition = parse_marker_node(getattr(marker, "_markers", []))
     return condition, extras
 
 
