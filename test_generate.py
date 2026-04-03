@@ -35,7 +35,7 @@ def test_map_package_name_preserves_conda_underscores():
     mapping = {
         "huggingface-hub": {"conda_name": "huggingface_hub"},
         "scikit-learn": {"conda_name": "scikit-learn"},
-        "pillow": {"conda_name": "pillow"},
+        "Pillow": {"conda_name": "pillow"},
     }
     with patch("conda_pypi.name_mapping.default_pypi_mapping", mapping):
         assert map_package_name("huggingface_hub") == "huggingface_hub"

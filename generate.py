@@ -80,6 +80,12 @@ def parse_packages_file(filepath: Path) -> list[tuple[str, str]]:
     """
     Parse packages.txt file into list of (name, version) tuples.
 
+    Format (one package per line):
+
+    - ``name==version`` — PyPI distribution name and version. Only the first ``==``
+      splits name and version (so versions may contain ``==`` if needed).
+    - Any other non-empty line is skipped with a warning (no ``==``).
+
     Args:
         filepath: Path to packages.txt file
 
@@ -177,7 +183,7 @@ async def generate_repodata(
                 if entry:
                     pkg_whls[f"{entry['name']}-{version}-py3_none_any_0"] = entry
 
-                    # Progress with rate every 100 packages or on completion
+                    # Show progress every 100 packages or on completion
                     if completed % 100 == 0 or completed == len(packages):
                         print(
                             f"  ✅ [{completed}/{len(packages)}] {name} {version} ({rate:.1f}/s)"
