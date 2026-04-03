@@ -13,7 +13,7 @@ A simple development conda channel for testing repodata for conda-pypi.
 This will install the conda-pypi plugin and its dependencies:
 
 ```bash
-conda install -n base 'conda-pypi>=0.5.0[build_number=">=2"]' 'conda-rattler-solver<0.0.6'
+conda install -n base 'conda-pypi>=0.6.0'
 ```
 
 ### Configure the solver

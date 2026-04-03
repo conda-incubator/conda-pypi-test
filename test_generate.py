@@ -6,11 +6,25 @@ Tests for generate.py
 import json
 from pathlib import Path
 from unittest.mock import patch
-from generate import (
-    map_package_name,
-    pypi_to_repodata_whl_entry,
-    parse_packages_file,
-)
+
+from conda_pypi.markers import pypi_to_repodata_noarch_whl_entry
+from conda_pypi.name_mapping import pypi_to_conda_name as map_package_name
+from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
+
+from generate import parse_packages_file
+
+
+def _minimal_noarch_wheel_urls(name: str, version: str) -> list[dict]:
+    return [
+        {
+            "packagetype": "bdist_wheel",
+            "filename": f"{name.replace('-', '_')}-{version}-py3-none-any.whl",
+            "url": "https://example.invalid/wheel.whl",
+            "size": 1,
+            "digests": {"sha256": "0" * 64},
+        }
+    ]
 
 
 def test_map_package_name_preserves_conda_underscores():
@@ -21,9 +35,9 @@ def test_map_package_name_preserves_conda_underscores():
     mapping = {
         "huggingface-hub": {"conda_name": "huggingface_hub"},
         "scikit-learn": {"conda_name": "scikit-learn"},
-        "Pillow": {"conda_name": "pillow"},
+        "pillow": {"conda_name": "pillow"},
     }
-    with patch("generate._MAPPING_CACHE", mapping):
+    with patch("conda_pypi.name_mapping.default_pypi_mapping", mapping):
         assert map_package_name("huggingface_hub") == "huggingface_hub"
         assert map_package_name("huggingface-hub") == "huggingface_hub"
         assert map_package_name("scikit-learn") == "scikit-learn"
@@ -32,7 +46,7 @@ def test_map_package_name_preserves_conda_underscores():
 
 def test_map_package_name_falls_back_to_normalized():
     """Packages not in the grayskull mapping fall back to lowercased hyphenated name."""
-    with patch("generate._MAPPING_CACHE", {}):
+    with patch("conda_pypi.name_mapping.default_pypi_mapping", {}):
         assert map_package_name("My_Package") == "my-package"
         assert map_package_name("some_lib") == "some-lib"
 
@@ -62,9 +76,10 @@ def test_pypi_to_repodata_whl_entry():
         ],
     }
 
-    entry = pypi_to_repodata_whl_entry(pypi_data)
+    entry = pypi_to_repodata_noarch_whl_entry(pypi_data)
 
     assert entry is not None
+    assert "fn" in entry
     assert entry["name"] == "requests"
     assert entry["version"] == "2.32.5"
     assert entry["size"] == 64928
@@ -76,7 +91,7 @@ def test_pypi_to_repodata_whl_entry():
 
 
 def test_pypi_to_repodata_whl_entry_with_extras():
-    """Test that extras markers are separated from regular deps and stored in extras dict."""
+    """Test that extras markers go to extra_depends (conda-pyi / repodata v3)."""
     pypi_data = {
         "info": {
             "name": "httpx",
@@ -103,23 +118,21 @@ def test_pypi_to_repodata_whl_entry_with_extras():
         ],
     }
 
-    entry = pypi_to_repodata_whl_entry(pypi_data)
+    entry = pypi_to_repodata_noarch_whl_entry(pypi_data)
 
     assert entry is not None
-    assert "extras" in entry
+    assert "extra_depends" in entry
 
-    extras = entry["extras"]
-    # Each declared extra should appear as a key
-    assert "asyncio" in extras
-    assert "http2" in extras
-    assert "brotli" in extras
-    assert "socks" in extras
+    extra_depends = entry["extra_depends"]
+    assert "asyncio" in extra_depends
+    assert "http2" in extra_depends
+    assert "brotli" in extra_depends
+    assert "socks" in extra_depends
 
-    # Each extra's dep list should contain the right package name
-    assert any("anyio" in dep for dep in extras["asyncio"])
-    assert any("h2" in dep for dep in extras["http2"])
-    assert any("brotli" in dep for dep in extras["brotli"])
-    assert any("socksio" in dep for dep in extras["socks"])
+    assert any("anyio" in dep for dep in extra_depends["asyncio"])
+    assert any("h2" in dep for dep in extra_depends["http2"])
+    assert any("brotli" in dep for dep in extra_depends["brotli"])
+    assert any("socksio" in dep for dep in extra_depends["socks"])
 
     # Non-extra deps must stay in depends, not bleed into extras
     assert any("certifi" in dep for dep in entry["depends"])
@@ -129,8 +142,65 @@ def test_pypi_to_repodata_whl_entry_with_extras():
     assert not any("h2" in dep for dep in entry["depends"])
 
 
+def test_pypi_to_repodata_python_marker_becomes_when_on_depends():
+    """Non-extra python_version markers become [when=...] on depends (conda-pyi markers)."""
+    pypi_data = {
+        "info": {
+            "name": "annotated-types",
+            "version": "0.7.0",
+            "requires_dist": ["typing-extensions>=4.0.0; python_version<'3.9'"],
+            "requires_python": ">=3.8",
+        },
+        "urls": _minimal_noarch_wheel_urls("annotated-types", "0.7.0"),
+    }
+    entry = pypi_to_repodata_noarch_whl_entry(pypi_data)
+    assert entry is not None
+    assert any(
+        dep.startswith("typing_extensions>=4.0.0") and '[when="python<3.9"]' in dep
+        for dep in entry["depends"]
+    ), entry["depends"]
+
+
+def test_pypi_to_repodata_sys_platform_marker_becomes_virtual_when():
+    """sys_platform markers map to __win / __unix style [when=...] on depends."""
+    pypi_data = {
+        "info": {
+            "name": "platdemo",
+            "version": "1.0.0",
+            "requires_dist": ['colorama; sys_platform == "win32"'],
+            "requires_python": ">=3.8",
+        },
+        "urls": _minimal_noarch_wheel_urls("platdemo", "1.0.0"),
+    }
+    entry = pypi_to_repodata_noarch_whl_entry(pypi_data)
+    assert entry is not None
+    colorama_dep = next(d for d in entry["depends"] if d.startswith("colorama"))
+    assert '[when="__win"]' in colorama_dep
+    assert "sys_platform" not in colorama_dep
+
+
+def test_pypi_to_repodata_extra_depends_socks_maps_conda_name_and_spec():
+    """PEP 508 extras land in extra_depends; PyPI names map via grayskull (cf. requests socks)."""
+    pypi_data = {
+        "info": {
+            "name": "requests",
+            "version": "2.32.5",
+            "requires_dist": ["PySocks!=1.5.7,>=1.5.6; extra == 'socks'"],
+            "requires_python": ">=3.8",
+        },
+        "urls": _minimal_noarch_wheel_urls("requests", "2.32.5"),
+    }
+    entry = pypi_to_repodata_noarch_whl_entry(pypi_data)
+    assert entry is not None
+    assert "socks" in entry["extra_depends"]
+    socks_dep = entry["extra_depends"]["socks"][0]
+    base_req = Requirement(socks_dep)
+    assert base_req.name == "pysocks"
+    assert base_req.specifier == SpecifierSet(">=1.5.6,!=1.5.7")
+
+
 def test_pypi_to_repodata_whl_entry_no_extras():
-    """Test that a package with no extras produces an empty extras dict."""
+    """Test that a package with no extras produces an empty extra_depends dict."""
     pypi_data = {
         "info": {
             "name": "certifi",
@@ -149,11 +219,11 @@ def test_pypi_to_repodata_whl_entry_no_extras():
         ],
     }
 
-    entry = pypi_to_repodata_whl_entry(pypi_data)
+    entry = pypi_to_repodata_noarch_whl_entry(pypi_data)
 
     assert entry is not None
-    assert "extras" in entry
-    assert entry["extras"] == {}
+    assert "extra_depends" in entry
+    assert entry["extra_depends"] == {}
 
 
 def test_pypi_to_repodata_whl_entry_no_wheel():
@@ -171,7 +241,7 @@ def test_pypi_to_repodata_whl_entry_no_wheel():
         ],
     }
 
-    entry = pypi_to_repodata_whl_entry(pypi_data)
+    entry = pypi_to_repodata_noarch_whl_entry(pypi_data)
     assert entry is None
 
 
@@ -237,24 +307,23 @@ def test_repodata_structure():
     with open(repodata_file) as f:
         repodata = json.load(f)
 
-    # Check required top-level keys
     required_keys = [
         "info",
         "packages",
         "packages.conda",
-        "packages.whl",
+        "v3",
         "repodata_version",
     ]
     for key in required_keys:
         assert key in repodata, f"Missing required key: {key}"
 
-    # Check structure
-    assert isinstance(repodata["packages.whl"], dict)
+    assert isinstance(repodata["v3"], dict)
+    assert "whl" in repodata["v3"]
+    assert isinstance(repodata["v3"]["whl"], dict)
     assert repodata["info"]["subdir"] == "noarch"
-    assert repodata["repodata_version"] == 1
+    assert repodata["repodata_version"] == 3
 
-    # Check that we have at least one package
-    assert len(repodata["packages.whl"]) > 0, "No packages found in repodata"
+    assert len(repodata["v3"]["whl"]) > 0, "No packages found in repodata"
 
 
 def test_repodata_package_entries():
@@ -267,20 +336,20 @@ def test_repodata_package_entries():
 
     required_fields = [
         "url",
-        "record_version",
         "name",
         "version",
         "build",
         "build_number",
         "depends",
+        "extra_depends",
+        "fn",
         "sha256",
         "size",
         "subdir",
         "noarch",
     ]
 
-    # Check first package entry
-    packages = repodata["packages.whl"]
+    packages = repodata["v3"]["whl"]
     assert len(packages) > 0, "No packages to test"
 
     first_package = next(iter(packages.values()))
@@ -310,57 +379,53 @@ def test_channeldata_structure():
     assert "noarch" in channeldata["subdirs"]
 
 
-def test_repodata_extras_field_present():
-    """Test that every package entry in repodata.json has an 'extras' field."""
+def test_repodata_extra_depends_field_present():
+    """Test that every package entry has extra_depends (repodata v3 whl shape)."""
     repo_root = Path(__file__).parent
     repodata_file = repo_root / "noarch" / "repodata.json"
 
     with open(repodata_file) as f:
         repodata = json.load(f)
 
-    packages = repodata["packages.whl"]
+    packages = repodata["v3"]["whl"]
     assert len(packages) > 0, "No packages to test"
 
     for key, entry in packages.items():
-        assert "extras" in entry, f"Package {key} is missing 'extras' field"
-        assert isinstance(entry["extras"], dict), f"Package {key} 'extras' is not a dict"
+        assert "extra_depends" in entry, f"Package {key} is missing 'extra_depends' field"
+        assert isinstance(entry["extra_depends"], dict), (
+            f"Package {key} 'extra_depends' is not a dict"
+        )
 
 
-def test_repodata_extras_not_in_depends():
-    """Test that extras deps are never duplicated in the top-level depends list."""
+def test_repodata_extra_depends_not_in_depends():
+    """Test that extra_depends are not duplicated in the top-level depends list."""
     repo_root = Path(__file__).parent
     repodata_file = repo_root / "noarch" / "repodata.json"
 
     with open(repodata_file) as f:
         repodata = json.load(f)
 
-    packages = repodata["packages.whl"]
+    packages = repodata["v3"]["whl"]
     for key, entry in packages.items():
-        extras_deps = {dep for deps in entry.get("extras", {}).values() for dep in deps}
+        extra_deps = {dep for deps in entry.get("extra_depends", {}).values() for dep in deps}
         for dep in entry.get("depends", []):
-            assert dep not in extras_deps, (
-                f"Package {key}: dep '{dep}' appears in both depends and extras"
+            assert dep not in extra_deps, (
+                f"Package {key}: dep '{dep}' appears in both depends and extra_depends"
             )
 
 
-def test_repodata_has_packages_with_extras():
-    """Test that the generated repodata contains at least one package with non-empty extras.
-
-    This guards against a regression where extras are silently dropped. The
-    packages-test.txt fixture intentionally includes packages that have extras
-    (e.g. httpx, requests) so this assertion should always pass when run after
-    generating from that file.
-    """
+def test_repodata_has_packages_with_extra_depends():
+    """At least one package should have non-empty extra_depends (fixture includes httpx, etc.)."""
     repo_root = Path(__file__).parent
     repodata_file = repo_root / "noarch" / "repodata.json"
 
     with open(repodata_file) as f:
         repodata = json.load(f)
 
-    packages = repodata["packages.whl"]
-    packages_with_extras = [k for k, v in packages.items() if v.get("extras")]
-    assert len(packages_with_extras) > 0, (
-        "No packages with extras found in repodata. "
+    packages = repodata["v3"]["whl"]
+    with_extra = [k for k, v in packages.items() if v.get("extra_depends")]
+    assert len(with_extra) > 0, (
+        "No packages with extra_depends found in repodata. "
         "Ensure packages-test.txt includes packages that declare extras "
         "(e.g. httpx, requests)."
     )

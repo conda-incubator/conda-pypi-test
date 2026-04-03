@@ -32,11 +32,6 @@ jobs:
           cache-environment: true
           init-shell: bash
       
-      - name: Install pytest
-        shell: micromamba-shell {0}
-        run: |
-          pip install pytest
-      
       - name: Generate repodata (test subset)
         shell: micromamba-shell {0}
         run: |
