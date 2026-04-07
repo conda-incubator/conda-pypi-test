@@ -2,6 +2,7 @@ name: conda-pypi-test
 channels:
   - conda-forge
 dependencies:
+  - conda-index>=0.6.0
   - conda-pypi>=0.6.0
   - h2  # HTTP/2 for httpx (pip install 'httpx[http2]' if not using conda)
   - hishel

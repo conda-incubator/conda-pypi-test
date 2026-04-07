@@ -313,6 +313,7 @@ def test_repodata_structure():
         "packages.conda",
         "v3",
         "repodata_version",
+        "removed",
     ]
     for key in required_keys:
         assert key in repodata, f"Missing required key: {key}"
@@ -321,7 +322,11 @@ def test_repodata_structure():
     assert "whl" in repodata["v3"]
     assert isinstance(repodata["v3"]["whl"], dict)
     assert repodata["info"]["subdir"] == "noarch"
-    assert repodata["repodata_version"] == 3
+    assert "repodata_revisions" in repodata["info"], (
+        "conda-index v3 repodata should include info.repodata_revisions"
+    )
+    # conda-index uses classic repodata_version with a top-level v3 section (draft CEP layout).
+    assert isinstance(repodata["repodata_version"], int)
 
     assert len(repodata["v3"]["whl"]) > 0, "No packages found in repodata"
 
