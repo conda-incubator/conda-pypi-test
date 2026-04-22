@@ -2,7 +2,8 @@
 """
 Generate conda repodata.json from PyPI packages.
 
-Fetches package metadata from PyPI using async HTTP/2 for fast performance.
+Fetches package metadata from PyPI using async HTTP/2 for fast performance,
+then indexes it using conda-index and conda-pypi's store_pypi_metadata.
 
 Usage:
     python generate.py [--concurrency N]
@@ -11,23 +12,26 @@ Usage:
 import argparse
 import asyncio
 import json
-try:
-    from compression.zstd import compress as zstd_compress  # Python 3.14+
-except ImportError:
-    from backports.zstd import compress as zstd_compress  # type: ignore[no-redef]
-import httpx
+import logging
 import time
 from pathlib import Path
 from typing import Any
 
-from conda_pypi.markers import pypi_to_repodata_noarch_whl_entry
+import httpx
+from conda_index.index import BaseCondaIndexCache, ChannelIndex
+from conda_index.utils import CONDA_PACKAGE_EXTENSIONS
+
+from conda_pypi.exceptions import UnableToConvertToRepodataEntry
+from conda_pypi.index import store_pypi_metadata
+
+log = logging.getLogger(__name__)
 
 
-async def get_repodata_entry(
+async def fetch_pypi_data(
     name: str, version: str, client: httpx.AsyncClient, max_retries: int = 3
 ) -> dict[str, Any] | None:
     """
-    Fetch package data from PyPI and convert to repodata entry.
+    Fetch raw package metadata from PyPI.
 
     Args:
         name: Package name
@@ -36,7 +40,7 @@ async def get_repodata_entry(
         max_retries: Maximum number of retry attempts
 
     Returns:
-        Repodata entry dictionary or None if failed
+        Raw PyPI JSON data or None if failed
     """
     pypi_endpoint = f"https://pypi.org/pypi/{name}/{version}/json"
 
@@ -55,7 +59,7 @@ async def get_repodata_entry(
             if not pypi_data:
                 return None
 
-            return pypi_to_repodata_noarch_whl_entry(pypi_data)
+            return pypi_data
         except httpx.HTTPStatusError as e:
             if attempt < max_retries - 1:
                 wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
@@ -113,21 +117,37 @@ def parse_packages_file(filepath: Path) -> list[tuple[str, str]]:
 
 
 async def generate_repodata(
-    packages: list[tuple[str, str]], output_dir: Path, concurrency: int = 100
-) -> dict[str, Any]:
+    packages: list[tuple[str, str]], repo_root: Path, concurrency: int = 100
+) -> None:
     """
-    Generate repodata.json from list of packages using async HTTP/2.
+    Generate repodata.json from list of packages using async HTTP/2 and conda-index.
+
+    Fetches PyPI metadata concurrently, stores each entry via store_pypi_metadata,
+    then calls ChannelIndex.index() to write the final repodata files.
 
     Args:
         packages: List of (name, version) tuples
-        output_dir: Directory to write repodata.json
+        repo_root: Root directory of the channel (parent of noarch/)
         concurrency: Maximum number of concurrent requests
-
-    Returns:
-        Generated repodata dictionary
     """
-    pkg_whls = {}
+    channel_index = ChannelIndex(
+        repo_root,
+        None,
+        threads=1,
+        debug=False,
+        write_bz2=False,
+        write_zst=True,
+        compact_json=False,
+        write_current_repodata=False,
+        repodata_v3=True,
+        update_only=True,
+        save_fs_state=False,
+        cache_kwargs={"package_extensions": CONDA_PACKAGE_EXTENSIONS + (".whl",)},
+    )
+    cache: BaseCondaIndexCache = channel_index.cache_for_subdir("noarch")
+
     failed_packages = []
+    stored_count = 0
 
     print(f"📦 Fetching {len(packages)} packages with async HTTP/2...\n")
 
@@ -151,7 +171,6 @@ async def generate_repodata(
         for i in range(0, len(packages), batch_size):
             batch = packages[i : i + batch_size]
 
-            # Create semaphore to limit concurrent requests
             semaphore = asyncio.Semaphore(concurrency)
 
             async def fetch_with_semaphore(
@@ -159,34 +178,36 @@ async def generate_repodata(
             ) -> tuple[tuple[str, str], dict[str, Any] | None]:
                 async with semaphore:
                     name, version = pkg_tuple
-                    result = await get_repodata_entry(name, version, client)
+                    result = await fetch_pypi_data(name, version, client)
                     return (pkg_tuple, result)
 
-            # Process batch concurrently
             tasks = [fetch_with_semaphore(pkg_tuple) for pkg_tuple in batch]
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Collect results
             for result in batch_results:
                 if isinstance(result, Exception):
                     completed += 1
                     continue
 
-                pkg_tuple, entry = result
+                pkg_tuple, pypi_data = result
                 name, version = pkg_tuple
                 completed += 1
 
-                # Calculate rate
                 elapsed = time.perf_counter() - start_time
                 rate = completed / elapsed if elapsed > 0 else 0
 
-                if entry:
-                    pkg_whls[f"{entry['name']}-{version}-py3_none_any_0"] = entry
-
-                    # Show progress every 100 packages or on completion
-                    if completed % 100 == 0 or completed == len(packages):
+                if pypi_data:
+                    try:
+                        store_pypi_metadata(cache, pypi_data)
+                        stored_count += 1
+                        if completed % 100 == 0 or completed == len(packages):
+                            print(
+                                f"  ✅ [{completed}/{len(packages)}] {name} {version} ({rate:.1f}/s)"
+                            )
+                    except UnableToConvertToRepodataEntry:
+                        failed_packages.append(f"{name}=={version}")
                         print(
-                            f"  ✅ [{completed}/{len(packages)}] {name} {version} ({rate:.1f}/s)"
+                            f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - unable to convert to repodata entry"
                         )
                 else:
                     failed_packages.append(f"{name}=={version}")
@@ -197,43 +218,18 @@ async def generate_repodata(
     finally:
         await client.aclose()
 
-    # Check if any packages failed
     if failed_packages:
-        print(f"\n⚠️  WARNING: {len(failed_packages)} package(s) missing wheels:\n")
+        print(f"\n⚠️  WARNING: {len(failed_packages)} package(s) failed:\n")
         for pkg in sorted(failed_packages):
             print(f"   - {pkg}")
         print(f"\nThese packages were skipped and not included in repodata.json\n")
 
-    repodata_output = {
-        "info": {"subdir": "noarch"},
-        "packages": {},
-        "packages.conda": {},
-        "removed": [],
-        "repodata_version": 3,
-        "signatures": {},
-        "v3": {"whl": dict(sorted(pkg_whls.items()))},
-    }
+    print(f"\n🗂  Indexing {stored_count} packages with conda-index...")
+    channel_index.index(patch_generator=None)
 
-    # Create output directory
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Serialize JSON once
-    json_data = json.dumps(repodata_output, indent=2)
-    json_bytes = json_data.encode("utf-8")
-
-    # Write uncompressed JSON
-    output_file = output_dir / "repodata.json"
-    with open(output_file, "w") as f:
-        f.write(json_data)
-    print(f"\n✨ Generated {len(pkg_whls)} packages → {output_file}")
-
-    # Write zstd compressed version
-    zst_file = output_dir / "repodata.json.zst"
-    with open(zst_file, "wb") as f:
-        f.write(zstd_compress(json_bytes, level=19))
-    print(f"✨ Compressed (zstd) → {zst_file}")
-
-    return repodata_output
+    output_dir = repo_root / "noarch"
+    print(f"✨ Generated repodata → {output_dir / 'repodata.json'}")
+    print(f"✨ Compressed (zstd) → {output_dir / 'repodata.json.zst'}")
 
 
 def generate_channeldata(repo_root: Path) -> None:
@@ -337,7 +333,7 @@ async def main_async(concurrency: int = 100, packages_file: Path | None = None):
     print(f"📍 Output directory: {output_dir}")
     print(f"🚀 Concurrency: {concurrency}\n")
 
-    await generate_repodata(packages, output_dir, concurrency)
+    await generate_repodata(packages, repo_root, concurrency)
     generate_channeldata(repo_root)
     generate_index_html(output_dir)
 
