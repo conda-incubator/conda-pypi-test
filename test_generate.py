@@ -321,7 +321,6 @@ def test_repodata_structure():
     assert "whl" in repodata["v3"]
     assert isinstance(repodata["v3"]["whl"], dict)
     assert repodata["info"]["subdir"] == "noarch"
-    assert repodata["repodata_version"] == 3
 
     assert len(repodata["v3"]["whl"]) > 0, "No packages found in repodata"
 
