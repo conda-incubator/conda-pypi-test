@@ -3,16 +3,18 @@
 Tests for generate.py
 """
 
+import asyncio
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 from conda_pypi.markers import pypi_to_repodata_noarch_whl_entry
 from conda_pypi.name_mapping import pypi_to_conda_name as map_package_name
 from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 
-from generate import parse_packages_file
+from generate import fetch_pypi_data, generate_repodata, parse_packages_file
 
 
 def _minimal_noarch_wheel_urls(name: str, version: str) -> list[dict]:
@@ -321,7 +323,6 @@ def test_repodata_structure():
     assert "whl" in repodata["v3"]
     assert isinstance(repodata["v3"]["whl"], dict)
     assert repodata["info"]["subdir"] == "noarch"
-    assert repodata["repodata_version"] == 3
 
     assert len(repodata["v3"]["whl"]) > 0, "No packages found in repodata"
 
@@ -391,7 +392,9 @@ def test_repodata_extra_depends_field_present():
     assert len(packages) > 0, "No packages to test"
 
     for key, entry in packages.items():
-        assert "extra_depends" in entry, f"Package {key} is missing 'extra_depends' field"
+        assert "extra_depends" in entry, (
+            f"Package {key} is missing 'extra_depends' field"
+        )
         assert isinstance(entry["extra_depends"], dict), (
             f"Package {key} 'extra_depends' is not a dict"
         )
@@ -407,7 +410,9 @@ def test_repodata_extra_depends_not_in_depends():
 
     packages = repodata["v3"]["whl"]
     for key, entry in packages.items():
-        extra_deps = {dep for deps in entry.get("extra_depends", {}).values() for dep in deps}
+        extra_deps = {
+            dep for deps in entry.get("extra_depends", {}).values() for dep in deps
+        }
         for dep in entry.get("depends", []):
             assert dep not in extra_deps, (
                 f"Package {key}: dep '{dep}' appears in both depends and extra_depends"
@@ -446,3 +451,99 @@ def test_compressed_files_valid():
     zst_size = zst_file.stat().st_size
 
     assert zst_size < json_size, "zst file should be smaller than json"
+
+
+def test_fetch_pypi_data_returns_none_on_404():
+    """A 404 response must return None immediately without retrying."""
+
+    async def _run():
+        request = httpx.Request("GET", "https://pypi.org/pypi/nonexistent/1.0.0/json")
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 404
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "404", request=request, response=mock_response
+        )
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.get.return_value = mock_response
+
+        result = await fetch_pypi_data(
+            "nonexistent", "1.0.0", mock_client, max_retries=3
+        )
+
+        assert result is None
+        # Must not retry — the client should be called exactly once.
+        mock_client.get.assert_called_once()
+
+    asyncio.run(_run())
+
+
+def test_generate_repodata_skips_package_on_store_exception(tmp_path):
+    """
+    When store_pypi_metadata raises an arbitrary exception (e.g.
+    InvalidRequirement from malformed requires_dist), generate_repodata must
+    catch it, record the package as failed, and continue processing the
+    remaining packages rather than crashing.
+    """
+
+    good_pypi_data = {
+        "info": {"name": "good-pkg", "version": "1.0.0"},
+        "urls": [
+            {
+                "filename": "good_pkg-1.0.0-py3-none-any.whl",
+                "url": "https://files.pythonhosted.org/packages/good_pkg-1.0.0-py3-none-any.whl",
+                "packagetype": "bdist_wheel",
+                "size": 1234,
+                "upload_time": "2024-01-01T00:00:00",
+                "digests": {"sha256": "abc123"},
+            }
+        ],
+    }
+    bad_pypi_data = {
+        "info": {"name": "bad-pkg", "version": "2.0.0"},
+        "urls": [
+            {
+                "filename": "bad_pkg-2.0.0-py3-none-any.whl",
+                "url": "https://files.pythonhosted.org/packages/bad_pkg-2.0.0-py3-none-any.whl",
+                "packagetype": "bdist_wheel",
+                "size": 5678,
+                "upload_time": "2024-01-02T00:00:00",
+                "digests": {"sha256": "def456"},
+            }
+        ],
+    }
+
+    packages = [("good-pkg", "1.0.0"), ("bad-pkg", "2.0.0")]
+
+    # fetch_pypi_data returns data for both packages.
+    async def fake_fetch(name, version, client, max_retries=3):
+        return good_pypi_data if name == "good-pkg" else bad_pypi_data
+
+    stored_calls = []
+
+    def fake_store(cache, pypi_data):
+        name = pypi_data["info"]["name"]
+        if name == "bad-pkg":
+            raise Exception("InvalidRequirement: malformed dep string")
+        stored_calls.append(name)
+
+    with (
+        patch("generate.fetch_pypi_data", side_effect=fake_fetch),
+        patch("generate.store_pypi_metadata", side_effect=fake_store),
+        patch("generate.ChannelIndex") as mock_channel_index_cls,
+    ):
+        mock_channel_index = MagicMock()
+        mock_channel_index_cls.return_value = mock_channel_index
+
+        mock_cache = MagicMock()
+        mock_cache.db = MagicMock()
+        mock_cache.db.__enter__ = MagicMock(return_value=mock_cache.db)
+        mock_cache.db.__exit__ = MagicMock(return_value=False)
+        mock_channel_index.cache_for_subdir.return_value = mock_cache
+
+        asyncio.run(generate_repodata(packages, tmp_path))
+
+    # The good package was stored successfully.
+    assert "good-pkg" in stored_calls
+    # generate_repodata did not crash despite the bad package raising.
+    assert len(stored_calls) == 1

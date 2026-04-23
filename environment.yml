@@ -2,16 +2,14 @@ name: conda-pypi-test
 channels:
   - conda-forge
 dependencies:
-  - conda-pypi>=0.6.0
-  - h2  # HTTP/2 for httpx (pip install 'httpx[http2]' if not using conda)
+  - conda-pypi>=0.8.0
+  - h2  # HTTP/2 for httpx
   - hishel
   - httpx
   - packaging
   - pytest
   - python>=3.10
-  - requests  # discover.py and other tooling
   - unearth
-  - backports.zstd
-  - msgpack-python # hishel[async]
-  - typing-extensions # hishel[async]
-  - anysqlite # hishel[async]
+  - msgpack-python  # hishel[async]
+  - typing-extensions  # hishel[async]
+  - anysqlite  # hishel[async]
