@@ -61,6 +61,8 @@ async def fetch_pypi_data(
 
             return pypi_data
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
             if attempt < max_retries - 1:
                 wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
                 print(
@@ -217,6 +219,23 @@ async def generate_repodata(
 
     finally:
         await client.aclose()
+
+    # Workaround for conda-pypi <= 0.8.0: store_pypi_metadata uses mismatched
+    # mtime defaults (1 vs 0) when the repodata entry lacks a "timestamp" key,
+    # causing conda-index to treat every entry as "changed" and attempt to
+    # re-extract the virtual .whl files from disk (which don't exist), resulting
+    # in 0 packages in repodata.json. Fix: align the 'fs' stage mtimes to match
+    # the 'indexed' stage so changed_packages() returns nothing.
+    # Remove once conda-pypi > 0.8.0 is the minimum required version.
+    with cache.db:
+        cache.db.execute(
+            """
+            UPDATE stat SET mtime = (
+                SELECT mtime FROM stat s2
+                WHERE s2.path = stat.path AND s2.stage = 'indexed'
+            ) WHERE stage = 'fs'
+            """
+        )
 
     if failed_packages:
         print(f"\n⚠️  WARNING: {len(failed_packages)} package(s) failed:\n")
