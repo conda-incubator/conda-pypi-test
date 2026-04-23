@@ -206,10 +206,10 @@ async def generate_repodata(
                             print(
                                 f"  ✅ [{completed}/{len(packages)}] {name} {version} ({rate:.1f}/s)"
                             )
-                    except UnableToConvertToRepodataEntry:
+                    except UnableToConvertToRepodataEntry as e:
                         failed_packages.append(f"{name}=={version}")
                         print(
-                            f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - unable to convert to repodata entry"
+                            f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - unable to convert to repodata entry: {e}"
                         )
                     except Exception as e:
                         failed_packages.append(f"{name}=={version}")
