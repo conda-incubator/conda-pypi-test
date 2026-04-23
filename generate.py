@@ -211,6 +211,11 @@ async def generate_repodata(
                         print(
                             f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - unable to convert to repodata entry"
                         )
+                    except Exception as e:
+                        failed_packages.append(f"{name}=={version}")
+                        print(
+                            f"  ⚠️  [{completed}/{len(packages)}] {name} {version} - skipped: {e}"
+                        )
                 else:
                     failed_packages.append(f"{name}=={version}")
                     print(
