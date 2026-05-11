@@ -1,0 +1,14 @@
+# Variant-aware packages from wheelnext registries
+# Format: name==version
+# These packages have live -variants.json files on their registries.
+
+# PyTorch (https://download.pytorch.org/whl/variant/)
+torch==2.10.0
+
+# NVIDIA CUDA libs (https://variants-index.wheelnext.dev/)
+nvidia-cublas==12.9.1.4
+nvidia-cuda-runtime==12.9.0.1
+nvidia-cudnn==9.10.1.1
+nvidia-cufft==11.4.0.5
+nvidia-nccl==2.26.5.1
+nvidia-nvjitlink==12.9.86
