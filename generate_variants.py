@@ -463,9 +463,14 @@ async def generate_variant_repodata(
             "info": {"subdir": subdir},
             "packages": {},
             "packages.conda": {},
-            "packages.whl": whl_entries,
+            "packages.whl": {},
             "removed": [],
             "repodata_version": 1,
+            "v3": {
+                "conda": {},
+                "tar.bz2": {},
+                "whl": whl_entries,
+            },
         }
 
         json_data = json.dumps(repodata, indent=2)
