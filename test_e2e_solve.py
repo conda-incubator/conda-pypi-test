@@ -87,30 +87,64 @@ def main():
 
     print(f"Resolved {len(to_link)} packages:\n")
 
+    # Show all resolved packages with their source channel
     torch_rec = None
+    variant_channel_pkgs = []
+    conda_forge_pkgs = []
+
     for rec in sorted(to_link, key=lambda r: r.name):
-        marker = ""
+        url = getattr(rec, "url", "") or ""
+        if channel_url in url or "pytorch.org" in url or "variants-index" in url:
+            source = "variant-channel"
+            variant_channel_pkgs.append(rec)
+        else:
+            source = "conda-forge"
+            conda_forge_pkgs.append(rec)
+
         if rec.name == "torch":
             torch_rec = rec
-            marker = " <-- variant wheel"
-        elif rec.name == "cuda-toolkit":
-            marker = " <-- runtime dep from conda-forge"
-        elif rec.name == "python":
-            marker = " <-- from conda-forge"
 
-        if marker:
-            print(f"  {rec.name}-{rec.version} (build={rec.build}){marker}")
+        print(f"  {rec.name}-{rec.version} [{source}]")
 
+    # Verify the solve is complete: every dependency of every package is satisfied
+    print("\n--- Dependency verification ---\n")
+    all_names = {rec.name for rec in to_link}
+    # Virtual packages provided by the system
+    virtual_packages = {"__cuda", "__cuda_arch", "__glibc", "__linux", "__unix", "__archspec"}
+    unsatisfied = []
+
+    for rec in to_link:
+        for dep in rec.depends:
+            dep_name = dep.split()[0].split(">")[0].split("<")[0].split("=")[0].split("!")[0]
+            if dep_name not in all_names and dep_name not in virtual_packages:
+                unsatisfied.append((rec.name, dep))
+
+    if unsatisfied:
+        print("UNSATISFIED dependencies (solver should have caught these):")
+        for pkg, dep in unsatisfied:
+            print(f"  {pkg} requires {dep}")
+    else:
+        print("All dependencies satisfied by resolved packages or virtual packages.")
+
+    # Show torch details
     if torch_rec:
-        print(f"\ntorch details:")
-        print(f"  url:     {getattr(torch_rec, 'url', 'n/a')}")
-        print(f"  build:   {torch_rec.build}")
-        print(f"  depends: {list(torch_rec.depends)}")
-        print(f"  subdir:  {getattr(torch_rec, 'subdir', 'n/a')}")
+        print("\n--- torch resolution ---\n")
+        print(f"  version:  {torch_rec.version}")
+        print(f"  build:    {torch_rec.build}")
+        print(f"  url:      {getattr(torch_rec, 'url', 'n/a')}")
+        print(f"  subdir:   {getattr(torch_rec, 'subdir', 'n/a')}")
+        print(f"  depends:  {list(torch_rec.depends)}")
+        print("  source:   variant wheel (downloaded directly from registry)")
 
-    print("\nSUCCESS")
+    print("\n--- Summary ---\n")
+    print(f"  Total packages:        {len(to_link)}")
+    print(f"  From variant channel:  {len(variant_channel_pkgs)}")
+    print(f"  From conda-forge:      {len(conda_forge_pkgs)}")
+    print(f"  Unsatisfied deps:      {len(unsatisfied)}")
+    print(f"\n  Result: {'SUCCESS' if not unsatisfied else 'FAILED'}")
+
     server.shutdown()
-    return 0
+    return 1 if unsatisfied else 0
 
 
 if __name__ == "__main__":
