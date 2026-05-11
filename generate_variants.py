@@ -79,6 +79,9 @@ VARIANT_PROPERTY_MAP = {
     ),
     ("nvidia", "sm_arch"): lambda v: (
         # sm_arch like "90_real" -> __cuda_arch >=9.0
+        # NOTE: __cuda_arch is provided by nvidia-virtual-packages plugin (conda-incubator),
+        # not part of CEP-30 core virtual packages. CEP pending: conda/ceps PR #157.
+        # Without the plugin installed, this dep is unsatisfiable and the solver skips the variant.
         [f"__cuda_arch >={_sm_to_version(v)}"] if "_real" in v else [],
         [],
     ),
@@ -224,18 +227,23 @@ async def fetch_variants_json(
 
 
 def parse_wheel_links(page_html: str, version: str) -> list[dict[str, str]]:
-    """Extract wheel URLs and filenames from a simple page for a given version."""
+    """Extract wheel URLs, filenames, and sha256 hashes from a simple page."""
     wheels = []
     for match in re.finditer(r'href="([^"]*)"', page_html):
         href = match.group(1)
-        # Strip hash fragment
-        url = href.split("#")[0]
+        # Extract sha256 from fragment (href="...whl#sha256=abc123")
+        sha256 = None
+        if "#sha256=" in href:
+            sha256 = href.split("#sha256=")[1]
+            url = href.split("#")[0]
+        else:
+            url = href.split("#")[0]
         if not url.endswith(".whl"):
             continue
         filename = url.rsplit("/", 1)[-1]
         if f"-{version}-" not in filename:
             continue
-        wheels.append({"url": url, "filename": filename})
+        wheels.append({"url": url, "filename": filename, "sha256": sha256})
     return wheels
 
 
@@ -305,12 +313,11 @@ def build_variant_repodata_entry(
         "url": url,
         "fn": filename,
         "subdir": subdir,
+        "md5": None,
+        "sha256": wheel.get("sha256"),
+        "size": None,
+        "timestamp": 0,
     }
-
-    # Extract sha256 from href fragment if available
-    href_match = re.search(rf'href="[^"]*{re.escape(filename)}#sha256=([a-f0-9]+)"', "")
-    if href_match:
-        entry["sha256"] = href_match.group(1)
 
     return key, entry
 
@@ -383,7 +390,7 @@ async def process_variant_package(
             )
             if result:
                 key, entry = result
-                subdir = entry.pop("subdir")
+                subdir = entry["subdir"]
                 entries.append((key, entry, subdir))
 
     return entries
@@ -463,7 +470,6 @@ async def generate_variant_repodata(
             "info": {"subdir": subdir},
             "packages": {},
             "packages.conda": {},
-            "packages.whl": {},
             "removed": [],
             "repodata_version": 1,
             "v3": {
